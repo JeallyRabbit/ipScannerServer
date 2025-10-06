@@ -34,6 +34,8 @@ namespace MyApp
 
                         if (serverConnectionChoice == "Load from .JSON")
                         {
+                            System.Console.Clear();
+
                             var currentDir = Directory.GetCurrentDirectory();
                             var files = Directory.GetFiles(currentDir);
                             AnsiConsole.MarkupLine(currentDir);
@@ -51,12 +53,12 @@ namespace MyApp
 
 
                                 var fileSelection = AnsiConsole.Prompt(
-                        new SelectionPrompt<string>()
-                        .Title("Choose file:")
-                        .PageSize(5)
-                        .AddChoices(fileNames));
+                                new SelectionPrompt<string>()
+                                .Title("Choose file:")
+                                .PageSize(5)
+                                .AddChoices(fileNames));
 
-
+                                AnsiConsole.MarkupLine($"selected file extension {Path.GetExtension(fileSelection)}");
                             }
                             else
                             {
