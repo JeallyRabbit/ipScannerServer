@@ -25,8 +25,8 @@ namespace MyApp
                         new SelectionPrompt<string>()
                         .Title("Select an option:")
                         .PageSize(5)
-                        .AddChoices(new[] { "Connect to server", "Exit" }));
-                    if (choice == "Connect to server")
+                        .AddChoices(new[] { "Connect server to database", "Exit" }));
+                    if (choice == "Connect server to database")
                     {
                         menu = 1;
                     }
@@ -103,9 +103,9 @@ namespace MyApp
 
                         if (fileSelection == "..")
                         {
-                            if (Directory.GetParent(currentDir)?.FullName != null)
+                            if (Path.GetDirectoryName(currentDir) != null)
                             {
-                                currentDir = Directory.GetParent(currentDir)?.FullName;
+                                currentDir = Path.GetDirectoryName(currentDir);
                             }
 
 
