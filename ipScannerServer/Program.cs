@@ -136,14 +136,14 @@ namespace MyApp
                     }
                     else if (fileSelection.ToLower().EndsWith(".json"))
                     {
-                        Console.WriteLine("COHSEN JSON");
+                        Console.WriteLine("Chosen JSON");
                         var json = File.ReadAllText(fileSelection);
                         var obj = JsonSerializer.Deserialize<object>(json);
                     }
                     else
                     {
                         currentDir += $"\\{fileSelection}";
-                        Console.WriteLine("COHSEN DIRECTORY");
+                        Console.WriteLine("Chosen DIRECTORY");
                     }
 
                     AnsiConsole.MarkupLine($"selected file extension {Path.GetExtension(fileSelection)}");
@@ -202,16 +202,25 @@ namespace MyApp
 
                         string serializedToSave = JsonSerializer.Serialize(toSave);
 
-                        string fileName = currentDir + "\\" + dataBaseName;
+                        string fileName = currentDir + Path.DirectorySeparatorChar + dataBaseName + ".json";
+                        bool isSavingSucces = true;
                         try
                         {
-                            File.WriteAllText(currentDir, serializedToSave);
+                            File.WriteAllText(fileName, serializedToSave);
                         }
                         catch (System.UnauthorizedAccessException)
                         {
-                            AnsiConsole.WriteLine($"Acces denied to: {currentDir}");
+                            isSavingSucces = false;
+                            AnsiConsole.MarkupLine($"[red]Acces denied[/] to: {fileName}");
                         }
 
+                        if (isSavingSucces)
+                        {
+                            AnsiConsole.MarkupLine($"[green]Saved to:[/] {fileName}");
+                        }
+                        
+                        AnsiConsole.Markup("[grey]Press [bold]<Enter>[/] to continue...[/]");
+                        Console.ReadLine();  
 
                     }
                     menu = 4;
