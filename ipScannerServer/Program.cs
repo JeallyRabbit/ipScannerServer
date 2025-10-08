@@ -3,6 +3,23 @@ using System.Text.Json;
 
 namespace MyApp
 {
+
+    class Database
+    {
+        //address, port, database name, postgre username, password
+        public string address { get; set; }
+        public string port { get; set; }
+        public string databaseName { get; set; }
+        public string username { get; set; }
+
+        public Database(string address, string port, string databaseName, string username)
+        {
+            this.address = address;
+            this.port = port;
+            this.databaseName = databaseName;
+            this.username = username;
+        }
+    }
     internal class Program
     {
         static void Main(string[] args)
@@ -70,66 +87,140 @@ namespace MyApp
 
                     var files = Directory.GetFiles(currentDir);
                     var directories = Directory.GetDirectories(currentDir);
-                    AnsiConsole.MarkupLine(currentDir);
+
+                    var path = new TextPath(currentDir).RootColor(Color.Red)
+                    .SeparatorColor(Color.Green)
+                    .StemColor(Color.Blue)
+                    .LeafColor(Color.Yellow);
+
+                    var panel = new Panel(path);
+                    panel.Border = BoxBorder.Square;
+
+                    AnsiConsole.Write(panel);
 
 
-                    if (files.Length > 0 || true)
+                    List<string> fileNames = new List<string>();
+
+                    fileNames.Add("..");
+
+                    foreach (var directory in directories)
                     {
-                        List<string> fileNames = new List<string>();
+                        fileNames.Add(Path.GetFileName(directory));
+                    }
 
-                        fileNames.Add("..");
-
-                        foreach (var directory in directories)
+                    foreach (var file in files)
+                    {
+                        if (Path.GetExtension(file).ToLower() == ".json")
                         {
-                            fileNames.Add(Path.GetFileName(directory));
-                        }
-
-                        foreach (var file in files)
-                        {
-                            if (Path.GetExtension(file).ToLower() == ".json")
-                            {
-                                fileNames.Add(Path.GetFileName(file));
-                            }
-
-
+                            fileNames.Add(Path.GetFileName(file));
                         }
 
 
-                        var fileSelection = AnsiConsole.Prompt(
-                        new SelectionPrompt<string>()
-                        .Title("Choose file:")
-                        .PageSize(height)
-                        .AddChoices(fileNames));
-
-                        if (fileSelection == "..")
-                        {
-                            if (Path.GetDirectoryName(currentDir) != null)
-                            {
-                                currentDir = Path.GetDirectoryName(currentDir);
-                            }
+                    }
 
 
-                        }
-                        else if (fileSelection.ToLower().EndsWith(".json"))
+                    var fileSelection = AnsiConsole.Prompt(
+                    new SelectionPrompt<string>()
+                    .Title("Choose file:")
+                    .PageSize(height)
+                    .AddChoices(fileNames));
+
+                    if (fileSelection == "..")
+                    {
+                        if (Path.GetDirectoryName(currentDir) != null)
                         {
-                            Console.WriteLine("COHSEN JSON");
-                            var json = File.ReadAllText(fileSelection);
-                            var obj = JsonSerializer.Deserialize<object>(json);
-                        }
-                        else
-                        {
-                            currentDir += $"\\{fileSelection}";
-                            Console.WriteLine("COHSEN DIRECTORY");
+                            currentDir = Path.GetDirectoryName(currentDir);
                         }
 
-                        AnsiConsole.MarkupLine($"selected file extension {Path.GetExtension(fileSelection)}");
+
+                    }
+                    else if (fileSelection.ToLower().EndsWith(".json"))
+                    {
+                        Console.WriteLine("COHSEN JSON");
+                        var json = File.ReadAllText(fileSelection);
+                        var obj = JsonSerializer.Deserialize<object>(json);
                     }
                     else
                     {
-                        //what to do here ?
+                        currentDir += $"\\{fileSelection}";
+                        Console.WriteLine("COHSEN DIRECTORY");
                     }
 
+                    AnsiConsole.MarkupLine($"selected file extension {Path.GetExtension(fileSelection)}");
+                }
+                if (menu == 3)
+                {
+                    var serverNameInput = AnsiConsole.Prompt(
+                    new TextPrompt<string>("[[localhost]] Enter erver hostname/ipAddress?:").AllowEmpty());
+                    var serverName = (serverNameInput != "") ? serverNameInput : "localhost";
 
+                    var portInput = AnsiConsole.Prompt(
+                    new TextPrompt<string>("[[5432]] Enter port number:").AllowEmpty());
+                    string portNumber = (portInput != "") ? portInput : "5432";
+
+                    var databaseNameInput = AnsiConsole.Prompt(
+                    new TextPrompt<string>("[[postgress]] Enter data base name:").AllowEmpty());
+                    string dataBaseName = (databaseNameInput != "") ? databaseNameInput : "postgress";
+
+                    var usernameInput = AnsiConsole.Prompt(
+                    new TextPrompt<string>("[[postgress]] Enter username:").AllowEmpty());
+                    string username = (usernameInput != "") ? usernameInput : "postgress";
+
+                    var passwordInput = AnsiConsole.Prompt(
+                    new TextPrompt<string>("[[postgress]] Enter user password:").AllowEmpty().Secret());
+                    string password = (passwordInput != "") ? passwordInput : "";
+
+                    var ifSave = AnsiConsole.Prompt(
+                    new TextPrompt<bool>("Save to .json?")
+                        .AddChoice(true)
+                        .AddChoice(false)
+                        .DefaultValue(true)
+                        .WithConverter(choice => choice ? "y" : "n"));
+
+
+                    var jsonPrint = new Spectre.Console.Json.JsonText(
+                           $$"""
+                            { 
+                                "serverName": "{{serverName}}", 
+                                "portNumber": "{{portNumber}}",
+                                "dataBaseName": "{{dataBaseName}}", 
+                                "username": "{{username}}"
+                            }
+                        """);
+
+                    AnsiConsole.Write(
+                        new Panel(jsonPrint)
+                            .Header("Data saved to JSON")
+                            .Collapse()
+                            .RoundedBorder()
+                            .BorderColor(Color.Yellow));
+
+
+                    if (ifSave == true)
+                    {
+                        Database toSave = new Database(serverName, portNumber, dataBaseName, username);
+
+                        string serializedToSave = JsonSerializer.Serialize(toSave);
+
+                        string fileName = currentDir + "\\" + dataBaseName;
+                        try
+                        {
+                            File.WriteAllText(currentDir, serializedToSave);
+                        }
+                        catch (System.UnauthorizedAccessException)
+                        {
+                            AnsiConsole.WriteLine($"Acces denied to: {currentDir}");
+                        }
+
+
+                    }
+                    menu = 4;
+
+                    //port, database name, postgre username, password
+                }
+                if (menu == 4)
+                {
+                    //waiting and operating connections from clients
                 }
             }
         }
