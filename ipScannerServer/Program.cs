@@ -1,4 +1,7 @@
-﻿using Spectre.Console;
+﻿using Dapper;
+using Microsoft.EntityFrameworkCore;
+using Npgsql;
+using Spectre.Console;
 using System.Text.Json;
 
 namespace MyApp
@@ -20,6 +23,23 @@ namespace MyApp
             this.username = username;
         }
     }
+
+
+    public class IP
+    {
+        public string address { get; set; }
+        public string hostname { get; set; }
+
+        public string lastCheckedDate { get; set; }
+    }
+
+    public sealed class AppDbContext(DbContextOptions<AppDbContext> opts) : DbContext(opts)
+    {
+        public DbSet<IP> IPs => Set<IP>();
+        protected override void OnModelCreating(ModelBuilder b)
+            => b.Entity<IP>().HasIndex(x => x.lastCheckedDate);
+    }
+
     internal class Program
     {
         static void Main(string[] args)
@@ -29,6 +49,8 @@ namespace MyApp
             int menu = 0;
             var choice = "";
             int height = AnsiConsole.Console.Profile.Height;
+            string connectionString = "";
+
             while (true)
             {
                 if (menu == -1)
@@ -138,7 +160,13 @@ namespace MyApp
                     {
                         Console.WriteLine("Chosen JSON");
                         var json = File.ReadAllText(fileSelection);
-                        var obj = JsonSerializer.Deserialize<object>(json);
+                        var obj = JsonSerializer.Deserialize<Database>(json);
+
+                        var passwordInput = AnsiConsole.Prompt(
+                    new TextPrompt<string>($"[[postgres]] Enter user: {obj.username} password:").AllowEmpty().Secret());
+                        string password = (passwordInput != "") ? passwordInput : "";
+
+                        connectionString = $"Host={obj.address};Port={obj.port};Database={obj.databaseName};User Id={obj.username};Password={password};Ssl Mode=Disable";
                     }
                     else
                     {
@@ -147,6 +175,13 @@ namespace MyApp
                     }
 
                     AnsiConsole.MarkupLine($"selected file extension {Path.GetExtension(fileSelection)}");
+
+
+
+
+
+
+                    menu = 4;
                 }
                 if (menu == 3)
                 {
@@ -159,15 +194,15 @@ namespace MyApp
                     string portNumber = (portInput != "") ? portInput : "5432";
 
                     var databaseNameInput = AnsiConsole.Prompt(
-                    new TextPrompt<string>("[[postgress]] Enter data base name:").AllowEmpty());
-                    string dataBaseName = (databaseNameInput != "") ? databaseNameInput : "postgress";
+                    new TextPrompt<string>("[[postgres]] Enter data base name:").AllowEmpty());
+                    string dataBaseName = (databaseNameInput != "") ? databaseNameInput : "postgres";
 
                     var usernameInput = AnsiConsole.Prompt(
-                    new TextPrompt<string>("[[postgress]] Enter username:").AllowEmpty());
-                    string username = (usernameInput != "") ? usernameInput : "postgress";
+                    new TextPrompt<string>("[[postgres]] Enter username:").AllowEmpty());
+                    string username = (usernameInput != "") ? usernameInput : "postgres";
 
                     var passwordInput = AnsiConsole.Prompt(
-                    new TextPrompt<string>("[[postgress]] Enter user password:").AllowEmpty().Secret());
+                    new TextPrompt<string>("[[postgres]] Enter user password:").AllowEmpty().Secret());
                     string password = (passwordInput != "") ? passwordInput : "";
 
                     var ifSave = AnsiConsole.Prompt(
@@ -218,11 +253,15 @@ namespace MyApp
                         {
                             AnsiConsole.MarkupLine($"[green]Saved to:[/] {fileName}");
                         }
-                        
+
+
                         AnsiConsole.Markup("[grey]Press [bold]<Enter>[/] to continue...[/]");
-                        Console.ReadLine();  
+                        Console.ReadLine();
 
                     }
+
+                    connectionString = $"Host={serverNameInput};Port={portNumber};Database={dataBaseName};User Id={username};Password={password}";
+
                     menu = 4;
 
                     //port, database name, postgre username, password
@@ -230,6 +269,65 @@ namespace MyApp
                 if (menu == 4)
                 {
                     //waiting and operating connections from clients
+
+
+                    var builder = WebApplication.CreateBuilder(args);
+                    var cs = "";
+                    bool successConnectToDataBase = true;
+                    try
+                    {
+                        cs = builder.Configuration.GetConnectionString("Postgres")
+                             ?? Environment.GetEnvironmentVariable("POSTGRES_CS")
+                             ?? connectionString
+                             ?? throw new InvalidOperationException("DB connection string missing.");
+                    }
+                    catch (System.InvalidOperationException)
+                    {
+                        AnsiConsole.MarkupLine($"[red]Can't connect[/] using: {cs}");
+                        successConnectToDataBase = false;
+                        menu = 1;
+                        AnsiConsole.Markup("[grey]Press [bold]<Enter>[/] to continue...[/]");
+                        Console.ReadLine();
+
+
+                    }
+
+
+                    if (successConnectToDataBase || cs != "")
+                    {
+                        var app = builder.Build();
+
+                        // GET /api/pcs/oldest  →  returns 10 PCs with oldest last_checked_date
+                        app.MapGet("/api/pcs/oldest", async () =>
+                        {
+                            const string sql = """
+                            SELECT
+                                ip AS "address",
+                                hostname AS "hostname",
+                                last_checked_date
+                            FROM devices
+                            ORDER BY last_checked_date ASC
+                            LIMIT 10;
+                            """;
+
+                            const string sql2 = """ SELECT * FROM devices""";
+
+                            await using var conn = new NpgsqlConnection(cs);
+                            var rows = await conn.QueryAsync<IP>(sql);
+
+                            foreach (var row in rows)
+                            {
+                                AnsiConsole.MarkupLine($"{row.address} {row.hostname} {row.lastCheckedDate}");
+                            }
+
+                            return Results.Ok(rows);
+                        });
+
+
+                        app.Run();
+                    }
+
+
                 }
             }
         }
