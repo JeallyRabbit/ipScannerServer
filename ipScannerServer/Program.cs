@@ -317,6 +317,8 @@ namespace MyApp
 
                             foreach (var row in rows)
                             {
+                                //add marking rows:
+                                //lease_woner - ip of host requesting GET
                                 AnsiConsole.MarkupLine($"{row.address} {row.hostname} {row.lastCheckedDate}");
                             }
 
