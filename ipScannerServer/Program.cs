@@ -85,6 +85,10 @@ namespace MyApp
 
         const string SELECTION_BACK = "back";
 
+
+        public static string url = "";
+
+
         static void Main(string[] args)
         {
             String currentDir = Directory.GetCurrentDirectory();
@@ -94,6 +98,9 @@ namespace MyApp
             int height = AnsiConsole.Console.Profile.Height;
             int port = 60719;
             string connectionString = "";
+
+
+            Server serverData = null;
 
             while (true)
             {
@@ -166,7 +173,6 @@ namespace MyApp
                     }
                     else if (fileSelection.ToLower().EndsWith(".json"))
                     {
-                        Console.WriteLine("Chosen JSON");
                         var json = File.ReadAllText(fileSelection);
                         Database obj = null;
                         try
@@ -338,7 +344,6 @@ namespace MyApp
                             LIMIT 10;
                             """;
 
-                            const string sql2 = """ SELECT * FROM devices""";
 
                             await using var conn = new NpgsqlConnection(cs);
                             var rows = await conn.QueryAsync<IP>(sql);
@@ -405,25 +410,61 @@ namespace MyApp
 
                         Console.WriteLine("Chosen JSON");
                         var json = File.ReadAllText(fileSelection);
-                        Server obj = null;
+
                         try
                         {
-                            obj = JsonSerializer.Deserialize<Server>(json);
+                            serverData = JsonSerializer.Deserialize<Server>(json);
                         }
                         catch (System.Text.Json.JsonException ex)
                         {
+                            menu = MENU_CLIENT_JSON;
                             AnsiConsole.MarkupLine($"[red]Failed to read:[/] {fileSelection}");
                             AnsiConsole.MarkupLine($"[grey]{ex.Message}[/]");
                         }
 
-                        if (obj != null)
+                        if (serverData != null)
                         {
                             // create required objects to connect to server
+                            //add pringint what was read
+                            var jsonPrint = new Spectre.Console.Json.JsonText(
+                           $$"""
+                            { 
+                                "serverAddress": "{{serverData.getAddress()}}", 
+                                "portNumber": "{{serverData.getPort()}}"
+                            }
+                        """);
+
+                            AnsiConsole.Write(
+                                new Panel(jsonPrint)
+                                    .Header("Data read from JSON")
+                                    .Collapse()
+                                    .RoundedBorder()
+                                    .BorderColor(Color.Yellow));
+
+                            if (serverData.getAddress() is null || serverData.getPort() is null)
+                            {
+                                AnsiConsole.MarkupLine("[red]Failed to read data[/]");
+
+                                AnsiConsole.Markup("[grey]Press [bold]<Enter>[/] to continue...[/]");
+                                Console.ReadLine();
+                                menu = MENU_CLIENT_JSON;
+                            }
+                            else
+                            {
+                                menu = MENU_PROCESS_CLIENT;
+                                AnsiConsole.Markup("[grey]Press [bold]<Enter>[/] to continue...[/]");
+                                Console.ReadLine();
+                            }
+
+
+
                         }
                         else
                         {
                             AnsiConsole.MarkupLine($"[yellow]File loaded but empty/null object:[/] {fileSelection}");
                         }
+
+
 
                     }
                     else if (fileSelection == SELECTION_BACK)
@@ -433,10 +474,9 @@ namespace MyApp
                     else
                     {
                         currentDir += $"\\{fileSelection}";
-                        Console.WriteLine("Chosen DIRECTORY");
                     }
 
-                    AnsiConsole.MarkupLine($"selected file extension {Path.GetExtension(fileSelection)}");
+                    Console.ReadLine();
 
                 }
                 else if (menu == MENU_CLIENT_INPUT)
@@ -504,6 +544,51 @@ namespace MyApp
 
                     }
                     menu = MENU_PROCESS_CLIENT;
+
+
+                }
+                else if (menu == MENU_PROCESS_CLIENT)
+                {
+
+                    System.Console.Clear();
+                    AnsiConsole.MarkupLine("Processing client side");
+
+
+                    url = $"https://{serverData.getAddress()}/{serverData.getPort()}/api/pcs/oldest";
+
+
+                    using var client = new HttpClient();
+                    client.Timeout = TimeSpan.FromSeconds(5);
+
+                    try
+                    {
+                        List<IP> addresses = client.GetFromJsonAsync<List<IP>>(url).GetAwaiter().GetResult();
+
+                        if (addresses is null)
+                        {
+                            AnsiConsole.MarkupLine($"No data acquired from server");
+                            //Add sleeping here ?
+                        }
+                        else
+                        {
+                            foreach (var address in addresses)
+                            {
+                                AnsiConsole.MarkupLine($"{address.address}, {address.hostname}, {address.lastCheckedDate}");
+
+                                AnsiConsole.Markup("[grey]Press [bold]<Enter>[/] to continue...[/]");
+                                Console.ReadLine();
+
+                            }
+                        }
+
+
+                    }
+                    catch (Exception ex)
+                    {
+                        Console.WriteLine($"[Error] {ex.Message}");
+                        AnsiConsole.Markup("[grey]Press [bold]<Enter>[/] to continue...[/]");
+                        Console.ReadLine();
+                    }
 
 
                 }
