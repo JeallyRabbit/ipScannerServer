@@ -82,6 +82,9 @@ namespace MyApp
         const int MENU_CLIENT_JSON = 12;
         const int MENU_CLIENT_INPUT = 13;
         const int MENU_PROCESS_CLIENT = 14;
+
+        const string SELECTION_BACK = "back";
+
         static void Main(string[] args)
         {
             String currentDir = Directory.GetCurrentDirectory();
@@ -191,6 +194,10 @@ namespace MyApp
                             AnsiConsole.MarkupLine($"[yellow]File loaded but empty/null object:[/] {fileSelection}");
                         }
 
+                    }
+                    else if (fileSelection == SELECTION_BACK)
+                    {
+                        menu = MENU_DATABYSE_CONNECTION_TYPE;
                     }
                     else
                     {
@@ -419,6 +426,10 @@ namespace MyApp
                         }
 
                     }
+                    else if (fileSelection == SELECTION_BACK)
+                    {
+                        menu = MENU_CONNECT_TO_SERVER_TYPE;
+                    }
                     else
                     {
                         currentDir += $"\\{fileSelection}";
@@ -540,6 +551,7 @@ namespace MyApp
 
 
             }
+            fileNames.Add(SELECTION_BACK);
 
 
             var fileSelection = AnsiConsole.Prompt(
