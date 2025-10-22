@@ -63,10 +63,6 @@ namespace MyApp
         const int MENU_DATABASE_INPUT = 3;
         const int MENU_PROCESS_SERVER_SIDE = 4;
 
-        const int MENU_CONNECT_TO_SERVER_TYPE = 11;
-        const int MENU_CLIENT_JSON = 12;
-        const int MENU_CLIENT_INPUT = 13;
-        const int MENU_PROCESS_CLIENT = 14;
 
         const string SELECTION_BACK = "back";
 
@@ -165,14 +161,48 @@ namespace MyApp
                             AnsiConsole.MarkupLine($"[grey]{ex.Message}[/]");
                         }
 
-                        if (obj != null)
+                        if (obj is not null)
                         {
-                            var passwordInput = AnsiConsole.Prompt(
-                                                    new TextPrompt<string>($"[[postgres]] Enter user: {obj.getUsername()} password:").AllowEmpty().Secret());
-                            string password = (passwordInput != "") ? passwordInput : "";
 
-                            connectionString = $"Host={obj.getAddress()};Port={obj.getPort()};Database={obj.getDatabaseName()};User Id={obj.getUsername()};Password={password};Ssl Mode=Disable";
-                            menu = MENU_PROCESS_SERVER_SIDE;
+                            var jsonPrint = new Spectre.Console.Json.JsonText(
+                           $$"""
+                            { 
+                                "Database Host/address": "{{obj.getAddress()}}", 
+                                "portNumber": "{{obj.getPort()}}",
+                                "dataBaseName": "{{obj.getDatabaseName()}}", 
+                                "username": "{{obj.getUsername()}}"
+                            }
+                        """);
+
+                            AnsiConsole.Write(
+                                new Panel(jsonPrint)
+                                    .Header("Data loaded from JSON")
+                                    .Collapse()
+                                    .RoundedBorder()
+                                    .BorderColor(Color.Yellow));
+
+                            bool isJsonValid = AnsiConsole.Prompt(
+                        new TextPrompt<bool>("Is this data correct?")
+                        .AddChoice(true)
+                        .AddChoice(false)
+                        .DefaultValue(true)
+                        .WithConverter(choice => choice ? "y" : "n"));
+
+
+                            if (isJsonValid)
+                            {
+                                var passwordInput = AnsiConsole.Prompt(
+                                                    new TextPrompt<string>($"[[postgres]] Enter user: {obj.getUsername()} password:").AllowEmpty().Secret());
+                                string password = (passwordInput != "") ? passwordInput : "";
+
+                                connectionString = $"Host={obj.getAddress()};Port={obj.getPort()};Database={obj.getDatabaseName()};User Id={obj.getUsername()};Password={password};Ssl Mode=Disable";
+                                menu = MENU_PROCESS_SERVER_SIDE;
+                            }
+                            else
+                            {
+                                menu = MENU_DATABASE_CONNECTION_TYPE;
+                            }
+
 
                         }
                         else
@@ -286,6 +316,16 @@ namespace MyApp
 
 
                     var builder = WebApplication.CreateBuilder(args);
+                    builder.WebHost.ConfigureKestrel(options =>
+                    {
+                        options.ListenAnyIP(60719);           // HTTP
+                        options.ListenAnyIP(60718, listenOpts =>
+                        {
+                            listenOpts.UseHttps();            // HTTPS
+                        });
+                    });
+
+
                     var cs = "";
                     bool successConnectToDataBase = true;
                     try
@@ -316,27 +356,48 @@ namespace MyApp
                         {
                             const string sql = """
                             SELECT
-                                ip AS "address",
-                                hostname AS "hostname",
-                                last_checked_date
+                                ip AS address,
+                                hostname AS hostname,
+                                last_checked_date as lastCheckedDate
                             FROM devices
                             ORDER BY last_checked_date ASC
                             LIMIT 10;
                             """;
 
 
+                            //try
+                            //{
                             await using var conn = new NpgsqlConnection(cs);
+                            AnsiConsole.MarkupLine("cs: " + cs);
                             var rows = await conn.QueryAsync<IP>(sql);
-
+                            Console.Write(rows.ToString());
                             foreach (var row in rows)
                             {
                                 //add marking rows:
                                 //lease_woner - ip of host requesting GET
                                 AnsiConsole.MarkupLine($"{row.address} {row.hostname} {row.lastCheckedDate}");
                             }
+                            //}
+                            //catch (Exception ex)
+                            //{
+                            //    AnsiConsole.MarkupLine(ex.Message);
+                            //}
+
 
                             return Results.Ok(rows);
                         });
+
+
+                        var shutdown = new ManualResetEventSlim(false);
+                        Console.CancelKeyPress += (_, e) =>
+                        {
+                            Console.WriteLine("Ctrl+C pressed, shutting down...");
+                            e.Cancel = true; // prevent process termination; allow graceful shutdown
+                            menu = MENU_DATABASE_CONNECTION_TYPE;
+                            app.Lifetime.StopApplication();
+                        };
+
+
 
 
                         app.Run();

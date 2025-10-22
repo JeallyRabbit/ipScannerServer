@@ -126,7 +126,7 @@ namespace MyApp
                             AnsiConsole.MarkupLine($"[grey]{ex.Message}[/]");
                         }
 
-                        if (serverData != null)
+                        if (serverData is not null)
                         {
                             // create required objects to connect to server
                             //add pringint what was read
@@ -257,15 +257,17 @@ namespace MyApp
                     System.Console.Clear();
                     AnsiConsole.MarkupLine("Processing client side");
 
+                    url = $"https://{serverData.getAddress()}:{serverData.getPort()}/api/pcs/oldest";
+                    AnsiConsole.MarkupLine($"url {url}");
 
-                    url = $"https://{serverData.getAddress()}/{serverData.getPort()}/api/pcs/oldest";
-
-
-                    using var client = new HttpClient();
-                    client.Timeout = TimeSpan.FromSeconds(5);
 
                     try
                     {
+
+                        using var client = new HttpClient();
+                        //client.Timeout = TimeSpan.FromSeconds(5);
+
+
                         List<IP> addresses = client.GetFromJsonAsync<List<IP>>(url).GetAwaiter().GetResult();
 
                         if (addresses is null)
@@ -279,10 +281,11 @@ namespace MyApp
                             {
                                 AnsiConsole.MarkupLine($"{address.address}, {address.hostname}, {address.lastCheckedDate}");
 
-                                AnsiConsole.Markup("[grey]Press [bold]<Enter>[/] to continue...[/]");
-                                Console.ReadLine();
+
 
                             }
+                            AnsiConsole.Markup("[grey]Press [bold]<Enter>[/] to continue...[/]");
+                            Console.ReadLine();
                         }
 
 
@@ -290,6 +293,7 @@ namespace MyApp
                     catch (Exception ex)
                     {
                         Console.WriteLine($"[Error] {ex.Message}");
+                        Console.WriteLine($"Url: {url}");
                         AnsiConsole.Markup("[grey]Press [bold]<Enter>[/] to continue...[/]");
                         Console.ReadLine();
                     }

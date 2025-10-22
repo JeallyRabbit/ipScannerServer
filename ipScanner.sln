@@ -9,14 +9,19 @@ Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "Client", "Client\Client.csp
 EndProject
 Global
 	GlobalSection(SolutionConfigurationPlatforms) = preSolution
+		bothProjects|Any CPU = bothProjects|Any CPU
 		Debug|Any CPU = Debug|Any CPU
 		Release|Any CPU = Release|Any CPU
 	EndGlobalSection
 	GlobalSection(ProjectConfigurationPlatforms) = postSolution
+		{3C933848-C163-411D-9175-0D75DFC3225D}.bothProjects|Any CPU.ActiveCfg = bothProjects|Any CPU
+		{3C933848-C163-411D-9175-0D75DFC3225D}.bothProjects|Any CPU.Build.0 = bothProjects|Any CPU
 		{3C933848-C163-411D-9175-0D75DFC3225D}.Debug|Any CPU.ActiveCfg = Debug|Any CPU
 		{3C933848-C163-411D-9175-0D75DFC3225D}.Debug|Any CPU.Build.0 = Debug|Any CPU
 		{3C933848-C163-411D-9175-0D75DFC3225D}.Release|Any CPU.ActiveCfg = Release|Any CPU
 		{3C933848-C163-411D-9175-0D75DFC3225D}.Release|Any CPU.Build.0 = Release|Any CPU
+		{46380857-698E-4898-B483-35DA45EF7967}.bothProjects|Any CPU.ActiveCfg = bothProjects|Any CPU
+		{46380857-698E-4898-B483-35DA45EF7967}.bothProjects|Any CPU.Build.0 = bothProjects|Any CPU
 		{46380857-698E-4898-B483-35DA45EF7967}.Debug|Any CPU.ActiveCfg = Debug|Any CPU
 		{46380857-698E-4898-B483-35DA45EF7967}.Debug|Any CPU.Build.0 = Debug|Any CPU
 		{46380857-698E-4898-B483-35DA45EF7967}.Release|Any CPU.ActiveCfg = Release|Any CPU
