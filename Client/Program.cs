@@ -1,5 +1,9 @@
-﻿using Spectre.Console;
+﻿using Microsoft.Win32;
+using Spectre.Console;
+using System.Net;
 using System.Net.Http.Json;
+using System.Net.NetworkInformation;
+using System.Text;
 using System.Text.Json;
 using System.Text.Json.Serialization;
 
@@ -7,11 +11,26 @@ using System.Text.Json.Serialization;
 namespace MyApp
 {
 
+    public class ipResponse
+    {
+        private string address { get; set; }
+        public string hostname { get; set; }
+        public string lastLoggedUser { get; set; }
+        private string lastCheckedDate { get; set; }
+        public string lastFoundDate { get; set; }
+
+        public bool successFinding;
+
+        public ipResponse(string address, string lastCheckedDate)
+        {
+            this.address = address;
+            this.lastCheckedDate = lastCheckedDate;
+        }
+    }
     public class IP
     {
         public string address { get; set; }
         public string hostname { get; set; }
-
         public string lastCheckedDate { get; set; }
     }
 
@@ -47,7 +66,11 @@ namespace MyApp
         const int MENU_CLIENT_INPUT = 13;
         const int MENU_PROCESS_CLIENT = 14;
 
+        const int MAX_PING_COUNTER = 5;
+
         const string SELECTION_BACK = "back";
+
+        const int PING_TIMEOUT = 5000;//5 sec
 
 
         public static string url = "";
@@ -277,11 +300,67 @@ namespace MyApp
                         }
                         else
                         {
-                            foreach (var address in addresses)
+                            List<ipResponse> ipResponses = new List<ipResponse>();
+
+                            Ping pingSender = new Ping();
+
+
+                            foreach (var ip in addresses)
                             {
-                                AnsiConsole.MarkupLine($"{address.address}, {address.hostname}, {address.lastCheckedDate}");
+                                AnsiConsole.MarkupLine($"{ip.address}, {ip.hostname}, {ip.lastCheckedDate}");
+                                int pingCounter = 0;
+                                string data = "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa";
+                                byte[] buffer = Encoding.ASCII.GetBytes(data);
+
+                                ipResponse response = new ipResponse(ip.address.ToString(), DateTime.Now.ToString());
+                                bool pingSuccess = false;
+
+                                System.Net.IPAddress pingAddress = System.Net.IPAddress.Parse(ip.address.ToString());
+                                PingReply reply = pingSender.Send(pingAddress, PING_TIMEOUT, buffer);
+
+                                while (pingCounter < MAX_PING_COUNTER)
+                                {
 
 
+                                    if (reply.Status == IPStatus.Success)
+                                    {
+                                        response.lastFoundDate = DateTime.Now.ToString();
+
+                                        IPHostEntry host = Dns.GetHostByAddress(pingAddress);
+                                        response.hostname = host.HostName;
+
+                                        response.successFinding = true;
+
+                                        try
+                                        {
+                                            using (RegistryKey baseKey = RegistryKey.OpenRemoteBaseKey(RegistryHive.LocalMachine, response.hostname))
+                                            using (RegistryKey subkey = baseKey.OpenSubKey(@"SOFTWARE\Microsoft\Windows\CurrentVersion\Authentication\LogonUI"))
+                                            {
+                                                object lastLoggedUser = subkey.GetValue("LastLoggedOnSAMUser", "noUser", RegistryValueOptions.DoNotExpandEnvironmentNames);
+
+                                            }
+                                        }
+                                        catch (Exception ex)
+                                        {
+                                            Console.WriteLine($"Error connecting to {response.hostname}: {ex.Message}");
+                                        }
+
+
+
+
+                                        pingSuccess = true;
+                                        break;
+                                    }
+                                    pingCounter++;
+                                }
+
+                                if (pingSuccess == false)
+                                {
+                                    response.successFinding = false;
+                                    AnsiConsole.MarkupLine($"[red]Failed to connect to:[/] {ip.address.ToString()}");
+                                }
+
+                                ipResponses.Add(response);
 
                             }
                             AnsiConsole.Markup("[grey]Press [bold]<Enter>[/] to continue...[/]");
