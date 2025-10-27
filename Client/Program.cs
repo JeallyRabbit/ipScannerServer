@@ -13,7 +13,7 @@ namespace MyApp
 
     public class ipResponse
     {
-        private string address { get; set; }
+        public string address { get; set; }
         public string hostname { get; set; }
         public string lastLoggedUser { get; set; }
         private string lastCheckedDate { get; set; }
@@ -32,6 +32,13 @@ namespace MyApp
         public string address { get; set; }
         public string hostname { get; set; }
         public string lastCheckedDate { get; set; }
+
+        public IP(string address, string hostname, string lastCheckedDate)
+        {
+            this.address = address;
+            this.hostname = hostname;
+            this.lastCheckedDate = lastCheckedDate;
+        }
     }
 
     class Server
@@ -69,8 +76,11 @@ namespace MyApp
         const int MAX_PING_COUNTER = 5;
 
         const string SELECTION_BACK = "back";
+        const string NO_LOGGED_USER = "no_user";
 
         const int PING_TIMEOUT = 5000;//5 sec
+
+
 
 
         public static string url = "";
@@ -293,6 +303,11 @@ namespace MyApp
 
                         List<IP> addresses = client.GetFromJsonAsync<List<IP>>(url).GetAwaiter().GetResult();
 
+                        //debugging
+                        //addresses.Insert(0, new IP("192.168.11.233", null, null));
+                        addresses.Insert(0, new IP("192.168.1.137", null, null));
+                        //
+
                         if (addresses is null)
                         {
                             AnsiConsole.MarkupLine($"No data acquired from server");
@@ -333,22 +348,25 @@ namespace MyApp
 
                                         try
                                         {
-                                            using (RegistryKey baseKey = RegistryKey.OpenRemoteBaseKey(RegistryHive.LocalMachine, response.hostname))
+                                            using (RegistryKey baseKey = RegistryKey.OpenRemoteBaseKey(RegistryHive.LocalMachine, "akarczewski" /*response.hostname*/))
                                             using (RegistryKey subkey = baseKey.OpenSubKey(@"SOFTWARE\Microsoft\Windows\CurrentVersion\Authentication\LogonUI"))
                                             {
-                                                object lastLoggedUser = subkey.GetValue("LastLoggedOnSAMUser", "noUser", RegistryValueOptions.DoNotExpandEnvironmentNames);
+                                                object lastLoggedUser = subkey.GetValue("LastLoggedOnSAMUser", NO_LOGGED_USER, RegistryValueOptions.DoNotExpandEnvironmentNames);
+
+                                                response.lastLoggedUser = lastLoggedUser.ToString();
 
                                             }
+
+
                                         }
                                         catch (Exception ex)
                                         {
+                                            Console.WriteLine(ex.GetType());
                                             Console.WriteLine($"Error connecting to {response.hostname}: {ex.Message}");
                                         }
 
-
-
-
                                         pingSuccess = true;
+                                        response.successFinding = true;
                                         break;
                                     }
                                     pingCounter++;
@@ -363,6 +381,11 @@ namespace MyApp
                                 ipResponses.Add(response);
 
                             }
+
+                            //sending response to server
+                            // Send PUT request with JSON body
+                            sendResponseToServer(serverData.getAddress(), serverData.getPort(), client, ipResponses);
+
                             AnsiConsole.Markup("[grey]Press [bold]<Enter>[/] to continue...[/]");
                             Console.ReadLine();
                         }
@@ -379,6 +402,23 @@ namespace MyApp
 
 
                 }
+            }
+        }
+
+        private static async Task sendResponseToServer(string serverIp, string serverPort, HttpClient client, List<ipResponse> ipResponses)
+        {
+            string url = $"https://{serverIp}:{serverPort}/api/pcs/response";
+            HttpResponseMessage httpResponse = await client.PutAsJsonAsync(url, ipResponses);
+
+            if (httpResponse.IsSuccessStatusCode)
+            {
+                Console.WriteLine("✅ Update successful!");
+                string result = await httpResponse.Content.ReadAsStringAsync();
+                Console.WriteLine($"Response: {result}");
+            }
+            else
+            {
+                Console.WriteLine($"❌ Error: {httpResponse.StatusCode}");
             }
         }
 

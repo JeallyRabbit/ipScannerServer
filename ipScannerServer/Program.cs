@@ -38,6 +38,22 @@ namespace MyApp
 
 
 
+    public class ipResponse
+    {
+        public string address { get; set; }
+        public string hostname { get; set; }
+        public string lastLoggedUser { get; set; }
+        public string lastCheckedDate { get; set; }
+        public string lastFoundDate { get; set; }
+
+        public bool successFinding;
+
+        public ipResponse(string address, string lastCheckedDate)
+        {
+            this.address = address;
+            this.lastCheckedDate = lastCheckedDate;
+        }
+    }
 
     public class IP
     {
@@ -337,7 +353,6 @@ namespace MyApp
                     }
                     catch (System.InvalidOperationException)
                     {
-                        AnsiConsole.MarkupLine($"[red]Can't connect[/] using: {cs}");
                         successConnectToDataBase = false;
                         menu = 1;
                         AnsiConsole.Markup("[grey]Press [bold]<Enter>[/] to continue...[/]");
@@ -377,14 +392,22 @@ namespace MyApp
                                 //lease_woner - ip of host requesting GET
                                 AnsiConsole.MarkupLine($"{row.address} {row.hostname} {row.lastCheckedDate}");
                             }
-                            //}
-                            //catch (Exception ex)
-                            //{
-                            //    AnsiConsole.MarkupLine(ex.Message);
-                            //}
 
 
                             return Results.Ok(rows);
+                        });
+
+                        app.MapPut("/api/pcs/response", (List<ipResponse> pcs) =>
+                        {
+                            Console.WriteLine($"Received {pcs.Count} PCs");
+
+                            foreach (var pc in pcs)
+                                Console.WriteLine($"IP: {pc.address}, Hostname: {pc.hostname}");
+
+                            // You can now process or save the data to your database here
+                            return Results.Ok(new { Received = pcs.Count });
+
+
                         });
 
 
