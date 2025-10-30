@@ -16,15 +16,18 @@ namespace MyApp
         public string address { get; set; }
         public string hostname { get; set; }
         public string lastLoggedUser { get; set; }
-        private string lastCheckedDate { get; set; }
-        public string lastFoundDate { get; set; }
+        public DateTime lastCheckedDate { get; set; }
+        public DateTime lastFoundDate { get; set; }
 
         public bool successFinding;
 
-        public ipResponse(string address, string lastCheckedDate)
+        public ipResponse(string address, DateTime lastCheckedDate)
         {
             this.address = address;
             this.lastCheckedDate = lastCheckedDate;
+            this.lastLoggedUser = "";
+            this.hostname = "";
+            this.lastFoundDate = new DateTime();
         }
     }
     public class IP
@@ -298,7 +301,7 @@ namespace MyApp
                     {
 
                         using var client = new HttpClient();
-                        //client.Timeout = TimeSpan.FromSeconds(5);
+                        client.DefaultRequestHeaders.Add("Client-Hostname", Dns.GetHostName().ToString());
 
 
                         List<IP> addresses = client.GetFromJsonAsync<List<IP>>(url).GetAwaiter().GetResult();
@@ -327,7 +330,7 @@ namespace MyApp
                                 string data = "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa";
                                 byte[] buffer = Encoding.ASCII.GetBytes(data);
 
-                                ipResponse response = new ipResponse(ip.address.ToString(), DateTime.Now.ToString());
+                                ipResponse response = new ipResponse(ip.address.ToString(), DateTime.Now);
                                 bool pingSuccess = false;
 
                                 System.Net.IPAddress pingAddress = System.Net.IPAddress.Parse(ip.address.ToString());
@@ -339,7 +342,7 @@ namespace MyApp
 
                                     if (reply.Status == IPStatus.Success)
                                     {
-                                        response.lastFoundDate = DateTime.Now.ToString();
+                                        response.lastFoundDate = DateTime.Now;
 
                                         IPHostEntry host = Dns.GetHostByAddress(pingAddress);
                                         response.hostname = host.HostName;
@@ -348,7 +351,7 @@ namespace MyApp
 
                                         try
                                         {
-                                            using (RegistryKey baseKey = RegistryKey.OpenRemoteBaseKey(RegistryHive.LocalMachine, "akarczewski" /*response.hostname*/))
+                                            using (RegistryKey baseKey = RegistryKey.OpenRemoteBaseKey(RegistryHive.LocalMachine, response.hostname))
                                             using (RegistryKey subkey = baseKey.OpenSubKey(@"SOFTWARE\Microsoft\Windows\CurrentVersion\Authentication\LogonUI"))
                                             {
                                                 object lastLoggedUser = subkey.GetValue("LastLoggedOnSAMUser", NO_LOGGED_USER, RegistryValueOptions.DoNotExpandEnvironmentNames);
@@ -397,7 +400,7 @@ namespace MyApp
                         Console.WriteLine($"[Error] {ex.Message}");
                         Console.WriteLine($"Url: {url}");
                         AnsiConsole.Markup("[grey]Press [bold]<Enter>[/] to continue...[/]");
-                        Console.ReadLine();
+                        // Console.ReadLine();
                     }
 
 

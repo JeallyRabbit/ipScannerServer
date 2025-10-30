@@ -43,12 +43,12 @@ namespace MyApp
         public string address { get; set; }
         public string hostname { get; set; }
         public string lastLoggedUser { get; set; }
-        public string lastCheckedDate { get; set; }
-        public string lastFoundDate { get; set; }
+        public DateTime lastCheckedDate { get; set; }
+        public DateTime lastFoundDate { get; set; }
 
         public bool successFinding;
 
-        public ipResponse(string address, string lastCheckedDate)
+        public ipResponse(string address, DateTime lastCheckedDate)
         {
             this.address = address;
             this.lastCheckedDate = lastCheckedDate;
@@ -91,6 +91,12 @@ namespace MyApp
             String currentDir = Directory.GetCurrentDirectory();
 
             int menu = MENU_DATABASE_CONNECTION_TYPE;
+
+            //debugging
+            menu = MENU_PROCESS_SERVER_SIDE;
+            //
+
+
             var choice = "";
             int height = AnsiConsole.Console.Profile.Height;
             int port = 60719;
@@ -330,6 +336,9 @@ namespace MyApp
                 {
                     //waiting and operating connections from clients
 
+                    //debuggiing
+                    connectionString = $"Host=localhost;Port=5432;Database=postgres;User Id=postgres;Password=Ushallpa$$";
+                    //
 
                     var builder = WebApplication.CreateBuilder(args);
                     builder.WebHost.ConfigureKestrel(options =>
@@ -367,28 +376,33 @@ namespace MyApp
                         var app = builder.Build();
 
                         // GET /api/pcs/oldest  →  returns 10 PCs with oldest last_checked_date
-                        app.MapGet("/api/pcs/oldest", async () =>
+                        app.MapGet("/api/pcs/oldest", async (HttpContext context) =>
                         {
-                            const string sql = """
-                            SELECT
-                                ip AS address,
+
+                            var senderHostname = context.Request.Headers["Client-Hostname"].ToString();
+
+                            var sql = @"
+                            UPDATE devices AS d
+                            SET lease_owner = @leaseOwner
+                            FROM (
+                                SELECT ip as address,
                                 hostname AS hostname,
                                 last_checked_date as lastCheckedDate
-                            FROM devices
-                            ORDER BY last_checked_date ASC
-                            LIMIT 10;
-                            """;
+                                FROM devices
+                                ORDER BY last_checked_date ASC
+                                LIMIT 10
+                            ) AS oldest
+                            WHERE d.ip = oldest.address
+                            RETURNING d.ip AS address, d.hostname AS hostname, d.last_checked_date AS lastCheckedDate;
+                            ";
 
-
-                            //try
-                            //{
                             await using var conn = new NpgsqlConnection(cs);
-                            AnsiConsole.MarkupLine("cs: " + cs);
-                            var rows = await conn.QueryAsync<IP>(sql);
-                            Console.Write(rows.ToString());
+
+                            var rows = await conn.QueryAsync<IP>(sql, new { leaseOwner = senderHostname });
+
                             foreach (var row in rows)
                             {
-                                //add marking rows:
+
                                 //lease_woner - ip of host requesting GET
                                 AnsiConsole.MarkupLine($"{row.address} {row.hostname} {row.lastCheckedDate}");
                             }
@@ -397,15 +411,49 @@ namespace MyApp
                             return Results.Ok(rows);
                         });
 
-                        app.MapPut("/api/pcs/response", (List<ipResponse> pcs) =>
+                        app.MapPut("/api/pcs/response", async (List<ipResponse> pcs) =>
                         {
                             Console.WriteLine($"Received {pcs.Count} PCs");
 
-                            foreach (var pc in pcs)
-                                Console.WriteLine($"IP: {pc.address}, Hostname: {pc.hostname}");
+                            await using var conn = new NpgsqlConnection(cs);
 
-                            // You can now process or save the data to your database here
-                            return Results.Ok(new { Received = pcs.Count });
+                            foreach (var pc in pcs)
+                            {
+
+
+                                string aux = null;
+                                if (pc.successFinding == true)
+                                {
+
+                                    string sqlResponse = @"
+                                UPDATE devices
+                                set lease_owner='',
+                                hostname = @Hostname,
+                                last_logged_user = @LastLoggedUser, 
+                                last_found_date = @LastFoundDate
+                                WHERE ip= @Address
+                                ";
+                                    var rows = await conn.QueryAsync<IP>(sqlResponse, new { Hostname = pc.hostname, LastLoggedUser = pc.lastLoggedUser, LastFoundDate = pc.lastFoundDate.Date, Address = pc.address });
+
+                                }
+                                else
+                                {
+                                    string sqlResponse = @"
+                                UPDATE devices
+                                set lease_owner=NULL,
+                                hostname = @Hostname,
+                                last_logged_user = @LastLoggedUser
+                                WHERE ip= @Address
+                                ";
+                                    var rows = await conn.QueryAsync<IP>(sqlResponse, new { Hostname = pc.hostname, LastLoggedUser = pc.lastLoggedUser, Address = pc.address });
+
+                                }
+
+                                Console.WriteLine($"IP: {pc.address}, Hostname: {pc.hostname}, LastCheckedDate: {pc.lastCheckedDate}");
+
+
+                            }
+
 
 
                         });
