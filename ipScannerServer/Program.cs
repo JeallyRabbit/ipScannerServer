@@ -430,10 +430,11 @@ namespace MyApp
                                 set lease_owner='',
                                 hostname = @Hostname,
                                 last_logged_user = @LastLoggedUser, 
+                                last_checked_date = @lastCheckedDate,
                                 last_found_date = @LastFoundDate
                                 WHERE ip= @Address
                                 ";
-                                    var rows = await conn.QueryAsync<IP>(sqlResponse, new { Hostname = pc.hostname, LastLoggedUser = pc.lastLoggedUser, LastFoundDate = pc.lastFoundDate.Date, Address = pc.address });
+                                    var rows = await conn.QueryAsync<IP>(sqlResponse, new { Hostname = pc.hostname, LastLoggedUser = pc.lastLoggedUser, LastFoundDate = pc.lastFoundDate.Date, lastCheckedDate = pc.lastCheckedDate, Address = pc.address });
 
                                 }
                                 else
@@ -442,10 +443,11 @@ namespace MyApp
                                 UPDATE devices
                                 set lease_owner=NULL,
                                 hostname = @Hostname,
-                                last_logged_user = @LastLoggedUser
+                                last_logged_user = @LastLoggedUser,
+                                last_checked_date = @LastCheckedDate
                                 WHERE ip= @Address
                                 ";
-                                    var rows = await conn.QueryAsync<IP>(sqlResponse, new { Hostname = pc.hostname, LastLoggedUser = pc.lastLoggedUser, Address = pc.address });
+                                    var rows = await conn.QueryAsync<IP>(sqlResponse, new { Hostname = pc.hostname, LastCheckedDate = pc.lastCheckedDate, LastLoggedUser = pc.lastLoggedUser, Address = pc.address });
 
                                 }
 

@@ -1,14 +1,15 @@
-﻿using Microsoft.Win32;
-using Spectre.Console;
+﻿using Spectre.Console;
+using System.Collections.ObjectModel;
+using System.Management.Automation;
 using System.Net;
 using System.Net.Http.Json;
 using System.Net.NetworkInformation;
+using System.Net.Sockets;
 using System.Text;
 using System.Text.Json;
 using System.Text.Json.Serialization;
 
-
-namespace MyApp
+namespace Client
 {
 
     public class ipResponse
@@ -25,9 +26,9 @@ namespace MyApp
         {
             this.address = address;
             this.lastCheckedDate = lastCheckedDate;
-            this.lastLoggedUser = "";
-            this.hostname = "";
-            this.lastFoundDate = new DateTime();
+            lastLoggedUser = "";
+            hostname = "";
+            lastFoundDate = new DateTime();
         }
     }
     public class IP
@@ -59,6 +60,16 @@ namespace MyApp
 
         public string getAddress() => address;
         public string getPort() => port;
+
+        public void setAddress(string address)
+        {
+            this.address = address;
+        }
+
+        public void setPort(string port)
+        {
+            this.port = port;
+        }
     }
 
 
@@ -89,7 +100,7 @@ namespace MyApp
         public static string url = "";
         static void Main(string[] args)
         {
-            String currentDir = Directory.GetCurrentDirectory();
+            string currentDir = Directory.GetCurrentDirectory();
 
             int menu = MENU_CONNECT_TO_SERVER_TYPE;
             var choice = "";
@@ -107,7 +118,7 @@ namespace MyApp
                 if (menu == MENU_CONNECT_TO_SERVER_TYPE)
                 {
                     //getting server connection data
-                    System.Console.Clear();
+                    Console.Clear();
                     var clientConnectionChoice = AnsiConsole.Prompt(
                     new SelectionPrompt<string>()
                     .Title("Choose client connection configuration method:")
@@ -133,7 +144,7 @@ namespace MyApp
                 }
                 else if (menu == MENU_CLIENT_JSON)
                 {
-                    System.Console.Clear();
+                    Console.Clear();
                     string fileSelection = Program.fileSelection(currentDir, height);
 
                     if (fileSelection == "..")
@@ -155,7 +166,7 @@ namespace MyApp
                         {
                             serverData = JsonSerializer.Deserialize<Server>(json);
                         }
-                        catch (System.Text.Json.JsonException ex)
+                        catch (JsonException ex)
                         {
                             menu = MENU_CLIENT_JSON;
                             AnsiConsole.MarkupLine($"[red]Failed to read:[/] {fileSelection}");
@@ -223,11 +234,11 @@ namespace MyApp
                 {
                     var serverNameInput = AnsiConsole.Prompt(
                     new TextPrompt<string>("[[localhost]] Enter server hostname/ipAddress?:").AllowEmpty());
-                    var serverName = (serverNameInput != "") ? serverNameInput : "localhost";
+                    var serverName = serverNameInput != "" ? serverNameInput : "localhost";
 
                     var portInput = AnsiConsole.Prompt(
-                    new TextPrompt<string>("[[60719]] Enter port number:").AllowEmpty());
-                    string portNumber = (portInput != "") ? portInput : "60719";
+                    new TextPrompt<string>("[[60718]] Enter port number:").AllowEmpty());
+                    string portNumber = portInput != "" ? portInput : "60718";
 
 
 
@@ -255,6 +266,9 @@ namespace MyApp
                             .BorderColor(Color.Yellow));
 
 
+
+                    serverData = new Server(serverName, portNumber);
+
                     if (ifSave == true)
                     {
                         Server toSave = new Server(serverName, portNumber);
@@ -267,7 +281,7 @@ namespace MyApp
                         {
                             File.WriteAllText(fileName, serializedToSave);
                         }
-                        catch (System.UnauthorizedAccessException)
+                        catch (UnauthorizedAccessException)
                         {
                             isSavingSucces = false;
                             AnsiConsole.MarkupLine($"[red]Acces denied[/] to: {fileName}");
@@ -290,7 +304,7 @@ namespace MyApp
                 else if (menu == MENU_PROCESS_CLIENT)
                 {
 
-                    System.Console.Clear();
+                    Console.Clear();
                     AnsiConsole.MarkupLine("Processing client side");
 
                     url = $"https://{serverData.getAddress()}:{serverData.getPort()}/api/pcs/oldest";
@@ -308,7 +322,9 @@ namespace MyApp
 
                         //debugging
                         //addresses.Insert(0, new IP("192.168.11.233", null, null));
-                        addresses.Insert(0, new IP("192.168.1.137", null, null));
+                        //List<IP> addresses = new List<IP>();
+                        //addresses.Insert(0, new IP("192.168.1.137", null, null));
+                        //addresses.Insert(0, new IP("192.168.16.32", null, null));
                         //
 
                         if (addresses is null)
@@ -333,7 +349,7 @@ namespace MyApp
                                 ipResponse response = new ipResponse(ip.address.ToString(), DateTime.Now);
                                 bool pingSuccess = false;
 
-                                System.Net.IPAddress pingAddress = System.Net.IPAddress.Parse(ip.address.ToString());
+                                IPAddress pingAddress = IPAddress.Parse(ip.address.ToString());
                                 PingReply reply = pingSender.Send(pingAddress, PING_TIMEOUT, buffer);
 
                                 while (pingCounter < MAX_PING_COUNTER)
@@ -342,34 +358,61 @@ namespace MyApp
 
                                     if (reply.Status == IPStatus.Success)
                                     {
-                                        response.lastFoundDate = DateTime.Now;
-
-                                        IPHostEntry host = Dns.GetHostByAddress(pingAddress);
-                                        response.hostname = host.HostName;
-
                                         response.successFinding = true;
+                                        response.lastFoundDate = DateTime.Now;
 
                                         try
                                         {
-                                            using (RegistryKey baseKey = RegistryKey.OpenRemoteBaseKey(RegistryHive.LocalMachine, response.hostname))
-                                            using (RegistryKey subkey = baseKey.OpenSubKey(@"SOFTWARE\Microsoft\Windows\CurrentVersion\Authentication\LogonUI"))
+                                            IPHostEntry host = Dns.GetHostByAddress(pingAddress);
+                                            response.hostname = host.HostName;
+
+                                        }
+                                        catch (SocketException ex)
+                                        {
+                                            response.hostname = "";
+
+                                        }
+
+
+
+                                        try
+                                        {
+                                            using (PowerShell ps = PowerShell.Create())
                                             {
-                                                object lastLoggedUser = subkey.GetValue("LastLoggedOnSAMUser", NO_LOGGED_USER, RegistryValueOptions.DoNotExpandEnvironmentNames);
+                                                ps.AddCommand("Get-WmiObject")
+                                                  .AddParameter("Class", "Win32_ComputerSystem ")
+                                                  .AddCommand("Select-Object")
+                                                  .AddParameter("Property", "UserName");
 
-                                                response.lastLoggedUser = lastLoggedUser.ToString();
 
+                                                // Execute PowerShell command
+                                                Collection<PSObject> results = ps.Invoke();
+
+                                                foreach (PSObject result in results)
+                                                {
+                                                    Console.WriteLine(result.Members["UserName"]?.Value ?? "No user logged in");
+                                                }
+
+                                                // Handle errors if needed
+                                                if (ps.Streams.Error.Count > 0)
+                                                {
+                                                    Console.WriteLine("Errors:");
+                                                    foreach (var error in ps.Streams.Error)
+                                                        Console.WriteLine(error.ToString());
+                                                }
                                             }
-
 
                                         }
                                         catch (Exception ex)
                                         {
                                             Console.WriteLine(ex.GetType());
-                                            Console.WriteLine($"Error connecting to {response.hostname}: {ex.Message}");
+                                            Console.WriteLine($"1. Error connecting to {response.hostname}: {ex.Message}");
                                         }
 
                                         pingSuccess = true;
                                         response.successFinding = true;
+                                        //AnsiConsole.Markup("[blue]Press [bold]<Enter>[/] to continue...[/]");
+                                        //Console.ReadLine();
                                         break;
                                     }
                                     pingCounter++;
@@ -383,13 +426,15 @@ namespace MyApp
 
                                 ipResponses.Add(response);
 
+
                             }
 
                             //sending response to server
                             // Send PUT request with JSON body
-                            sendResponseToServer(serverData.getAddress(), serverData.getPort(), client, ipResponses);
+                            AnsiConsole.Markup("[grey]Before sending response[/]");
+                            sendResponseToServer(serverData.getAddress(), serverData.getPort(), client, ipResponses).Wait();
 
-                            AnsiConsole.Markup("[grey]Press [bold]<Enter>[/] to continue...[/]");
+                            AnsiConsole.Markup("[grey]Press [bold]<Enter>[/] to continue (after sending response)...[/]");
                             Console.ReadLine();
                         }
 
@@ -397,10 +442,10 @@ namespace MyApp
                     }
                     catch (Exception ex)
                     {
-                        Console.WriteLine($"[Error] {ex.Message}");
+                        Console.WriteLine($"[2 Error] {ex.GetType()} {ex.Message}");
                         Console.WriteLine($"Url: {url}");
-                        AnsiConsole.Markup("[grey]Press [bold]<Enter>[/] to continue...[/]");
-                        // Console.ReadLine();
+                        AnsiConsole.Markup("[grey]Press [bold]<Enter>[/] to continue (errorrrrrr)...[/]");
+                        Console.ReadLine();
                     }
 
 
