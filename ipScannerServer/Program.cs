@@ -396,20 +396,20 @@ namespace MyApp
                             RETURNING d.ip AS address, d.hostname AS hostname, d.last_checked_date AS lastCheckedDate;
                             ";
 
-                            await using var conn = new NpgsqlConnection(cs);
-
-                            var rows = await conn.QueryAsync<IP>(sql, new { leaseOwner = senderHostname });
-
-                            /*
-                            foreach (var row in rows)
+                            try
                             {
-                                
-                                AnsiConsole.MarkupLine($"{row.address} {row.hostname} {row.lastCheckedDate}");
+                                await using var conn = new NpgsqlConnection(cs);
+
+                                var rows = await conn.QueryAsync<IP>(sql, new { leaseOwner = senderHostname });
+
+                                return Results.Ok(rows);
                             }
-                            */
+                            catch (System.ArgumentNullException ex)
+                            {
+                                Console.WriteLine(ex);
+                                return Results.NotFound();
+                            }
 
-
-                            return Results.Ok(rows);
                         });
 
                         app.MapPut("/api/pcs/response", async (List<ipResponse> pcs) =>

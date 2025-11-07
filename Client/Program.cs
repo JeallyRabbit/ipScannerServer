@@ -308,7 +308,7 @@ namespace Client
                     AnsiConsole.MarkupLine("Processing client side");
 
                     url = $"https://{serverData.getAddress()}:{serverData.getPort()}/api/pcs/oldest";
-
+                    var table = new Table();
 
                     try
                     {
@@ -319,12 +319,18 @@ namespace Client
 
                         List<IP> addresses = client.GetFromJsonAsync<List<IP>>(url).GetAwaiter().GetResult();
 
-                        //debugging
-                        //addresses.Insert(0, new IP("192.168.11.233", null, null));
-                        //List<IP> addresses = new List<IP>();
-                        //addresses.Insert(0, new IP("192.168.1.137", null, null));
-                        //addresses.Insert(0, new IP("192.168.16.32", null, null));
-                        //
+
+                        AnsiConsole.Live(table)
+                            .AutoClear(false)
+                            .StartAsync(async ctx =>
+                            {
+                                table.AddColumn(new TableColumn(new Markup("[green] IpAddress [/]")));
+                                table.AddColumn(new TableColumn("[blue] Hostname [/]"));
+                                table.AddColumn(new TableColumn("[blue] lastLoggedUser [/]"));
+                                table.AddColumn(new TableColumn("[blue] LastCheckedDate [/]"));
+                                table.AddColumn(new TableColumn("[blue] lastFoundDate [/]"));
+                            });
+
 
                         if (addresses is null)
                         {
@@ -333,7 +339,9 @@ namespace Client
                         }
                         else
                         {
+
                             List<ipResponse> ipResponses = new List<ipResponse>();
+
 
 
 
@@ -342,7 +350,6 @@ namespace Client
                             {
                                 Ping pingSender = new Ping();
 
-                                AnsiConsole.Markup($"Processing: {ip.address} ");
                                 int pingCounter = 0;
                                 string data = "a";
                                 byte[] buffer = Encoding.ASCII.GetBytes(data);
@@ -352,14 +359,12 @@ namespace Client
 
                                 IPAddress pingAddress = IPAddress.Parse(ip.address.ToString());
 
-
                                 while (pingCounter < MAX_PING_COUNTER)
                                 {
 
                                     PingReply reply = pingSender.Send(pingAddress, PING_TIMEOUT);
                                     if (reply.Status == IPStatus.Success)
                                     {
-                                        AnsiConsole.Markup("[green]*[/]");
                                         response.successFinding = true;
                                         response.lastFoundDate = DateTime.Now;
 
@@ -368,7 +373,6 @@ namespace Client
                                             IPHostEntry host = Dns.GetHostByAddress(pingAddress);
 
                                             response.hostname = host.HostName;
-                                            AnsiConsole.Write($" Hostname: {response.hostname}");
 
                                         }
                                         catch (SocketException ex)
@@ -391,7 +395,8 @@ namespace Client
                                             foreach (ManagementObject mo in searcher.Get())
                                             {
                                                 //AnsiConsole.MarkupLine($"UserName on {pingAddress}:[green] {mo["UserName"]}[/]");
-                                                AnsiConsole.MarkupLine($" UserName: {mo["UserName"]}");
+                                                //AnsiConsole.MarkupLine($" UserName: {mo["UserName"]}");
+                                                response.lastLoggedUser = mo["UserName"].ToString();
                                             }
 
 
@@ -412,31 +417,70 @@ namespace Client
                                     }
                                     else
                                     {
-                                        AnsiConsole.Markup("[red]*[/]");
+                                        //AnsiConsole.Markup("[red]*[/]");
                                     }
                                     pingCounter++;
-                                    //AnsiConsole.MarkupLine($"[red]Failed to connect to:[/] {ip.address.ToString()}");
+
+
+                                    //for printing
+                                    var doneCount = ipResponses.Count();
+                                    foreach (var res in ipResponses)
+                                    {
+                                        if (res.successFinding)
+                                        {
+                                            table.AddRow(res.address, res.hostname, res.lastLoggedUser, res.lastCheckedDate.ToString(), res.lastFoundDate.ToString());
+
+                                        }
+                                        else
+                                        {
+                                            table.AddRow(res.address, "----", "----", res.lastCheckedDate.ToString(), res.lastFoundDate.ToString());
+
+                                        }
+                                    }
+
+                                    foreach (var auxIp in addresses)
+                                    {
+                                        if (doneCount > 0) { doneCount--; continue; }
+
+                                        if (auxIp.address == ip.address)
+                                        {
+                                            var auxAddress = auxIp.address;
+                                            for (int i = 0; i <= pingCounter; i++)
+                                            {
+                                                auxAddress += "*";
+                                            }
+                                        }
+
+
+                                        table.AddRow(auxIp.address, "", "", "", "");
+                                    }
+
+                                    ///////
+                                    ///
+
                                 }
 
                                 if (pingSuccess == false)
                                 {
 
                                     response.successFinding = false;
-                                    AnsiConsole.MarkupLine($"[red] Failed to connect to:[/] {ip.address.ToString()}");
+                                    //AnsiConsole.MarkupLine($"[red] Failed to connect to:[/] {ip.address.ToString()}");
                                 }
 
                                 ipResponses.Add(response);
+
+
 
 
                             }
 
                             //sending response to server
                             // Send PUT request with JSON body
-                            AnsiConsole.Markup("[grey]Before sending response[/]");
+                            //AnsiConsole.Markup("[grey]Before sending response[/]");
                             sendResponseToServer(serverData.getAddress(), serverData.getPort(), client, ipResponses).Wait();
 
-                            AnsiConsole.Markup("[grey]Press [bold]<Enter>[/] to continue (after sending response)...[/]");
-                            Console.ReadLine();
+                            //AnsiConsole.Markup("[grey]Press [bold]<Enter>[/] to continue (after sending response)...[/]");
+                            //Console.ReadLine();
                         }
 
 
@@ -461,13 +505,13 @@ namespace Client
 
             if (httpResponse.IsSuccessStatusCode)
             {
-                Console.WriteLine("✅ Update successful!");
+                //Console.WriteLine("✅ Update successful!");
                 string result = await httpResponse.Content.ReadAsStringAsync();
-                Console.WriteLine($"Response: {result}");
+                //Console.WriteLine($"Response: {result}");
             }
             else
             {
-                Console.WriteLine($"❌ Error: {httpResponse.StatusCode}");
+                //Console.WriteLine($"❌ Error: {httpResponse.StatusCode}");
             }
         }
 
