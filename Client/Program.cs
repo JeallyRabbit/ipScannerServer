@@ -1,6 +1,5 @@
 ﻿using Spectre.Console;
-using System.Collections.ObjectModel;
-using System.Management.Automation;
+using System.Management;
 using System.Net;
 using System.Net.Http.Json;
 using System.Net.NetworkInformation;
@@ -8,6 +7,7 @@ using System.Net.Sockets;
 using System.Text;
 using System.Text.Json;
 using System.Text.Json.Serialization;
+
 
 namespace Client
 {
@@ -87,12 +87,12 @@ namespace Client
         const int MENU_CLIENT_INPUT = 13;
         const int MENU_PROCESS_CLIENT = 14;
 
-        const int MAX_PING_COUNTER = 5;
+        const int MAX_PING_COUNTER = 3;
 
         const string SELECTION_BACK = "back";
         const string NO_LOGGED_USER = "no_user";
 
-        const int PING_TIMEOUT = 5000;//5 sec
+        const int PING_TIMEOUT = 2000;//5 sec
 
 
 
@@ -308,7 +308,6 @@ namespace Client
                     AnsiConsole.MarkupLine("Processing client side");
 
                     url = $"https://{serverData.getAddress()}:{serverData.getPort()}/api/pcs/oldest";
-                    AnsiConsole.MarkupLine($"url {url}");
 
 
                     try
@@ -336,35 +335,40 @@ namespace Client
                         {
                             List<ipResponse> ipResponses = new List<ipResponse>();
 
-                            Ping pingSender = new Ping();
+
 
 
                             foreach (var ip in addresses)
                             {
-                                AnsiConsole.MarkupLine($"{ip.address}, {ip.hostname}, {ip.lastCheckedDate}");
+                                Ping pingSender = new Ping();
+
+                                AnsiConsole.Markup($"Processing: {ip.address} ");
                                 int pingCounter = 0;
-                                string data = "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa";
+                                string data = "a";
                                 byte[] buffer = Encoding.ASCII.GetBytes(data);
 
                                 ipResponse response = new ipResponse(ip.address.ToString(), DateTime.Now);
                                 bool pingSuccess = false;
 
                                 IPAddress pingAddress = IPAddress.Parse(ip.address.ToString());
-                                PingReply reply = pingSender.Send(pingAddress, PING_TIMEOUT, buffer);
+
 
                                 while (pingCounter < MAX_PING_COUNTER)
                                 {
 
-
+                                    PingReply reply = pingSender.Send(pingAddress, PING_TIMEOUT);
                                     if (reply.Status == IPStatus.Success)
                                     {
+                                        AnsiConsole.Markup("[green]*[/]");
                                         response.successFinding = true;
                                         response.lastFoundDate = DateTime.Now;
 
                                         try
                                         {
                                             IPHostEntry host = Dns.GetHostByAddress(pingAddress);
+
                                             response.hostname = host.HostName;
+                                            AnsiConsole.Write($" Hostname: {response.hostname}");
 
                                         }
                                         catch (SocketException ex)
@@ -377,36 +381,27 @@ namespace Client
 
                                         try
                                         {
-                                            using (PowerShell ps = PowerShell.Create())
+
+                                            var scope = new ManagementScope($@"\\{pingAddress}\root\cimv2");
+                                            scope.Connect();
+
+                                            var query = new ObjectQuery("SELECT UserName FROM Win32_ComputerSystem");
+                                            using var searcher = new ManagementObjectSearcher(scope, query);
+
+                                            foreach (ManagementObject mo in searcher.Get())
                                             {
-                                                ps.AddCommand("Get-WmiObject")
-                                                  .AddParameter("Class", "Win32_ComputerSystem ")
-                                                  .AddCommand("Select-Object")
-                                                  .AddParameter("Property", "UserName");
-
-
-                                                // Execute PowerShell command
-                                                Collection<PSObject> results = ps.Invoke();
-
-                                                foreach (PSObject result in results)
-                                                {
-                                                    Console.WriteLine(result.Members["UserName"]?.Value ?? "No user logged in");
-                                                }
-
-                                                // Handle errors if needed
-                                                if (ps.Streams.Error.Count > 0)
-                                                {
-                                                    Console.WriteLine("Errors:");
-                                                    foreach (var error in ps.Streams.Error)
-                                                        Console.WriteLine(error.ToString());
-                                                }
+                                                //AnsiConsole.MarkupLine($"UserName on {pingAddress}:[green] {mo["UserName"]}[/]");
+                                                AnsiConsole.MarkupLine($" UserName: {mo["UserName"]}");
                                             }
+
+
 
                                         }
                                         catch (Exception ex)
                                         {
+                                            Console.WriteLine($"Error from: {ex.Source}");
                                             Console.WriteLine(ex.GetType());
-                                            Console.WriteLine($"1. Error connecting to {response.hostname}: {ex.Message}");
+                                            Console.WriteLine($"1. Error: {response.hostname}: {ex.Message}");
                                         }
 
                                         pingSuccess = true;
@@ -415,13 +410,19 @@ namespace Client
                                         //Console.ReadLine();
                                         break;
                                     }
+                                    else
+                                    {
+                                        AnsiConsole.Markup("[red]*[/]");
+                                    }
                                     pingCounter++;
+                                    //AnsiConsole.MarkupLine($"[red]Failed to connect to:[/] {ip.address.ToString()}");
                                 }
 
                                 if (pingSuccess == false)
                                 {
+
                                     response.successFinding = false;
-                                    AnsiConsole.MarkupLine($"[red]Failed to connect to:[/] {ip.address.ToString()}");
+                                    AnsiConsole.MarkupLine($"[red] Failed to connect to:[/] {ip.address.ToString()}");
                                 }
 
                                 ipResponses.Add(response);
@@ -490,11 +491,6 @@ namespace Client
 
             fileNames.Add("..");
 
-            foreach (var directory in directories)
-            {
-                fileNames.Add(Path.GetFileName(directory));
-            }
-
             foreach (var file in files)
             {
                 if (Path.GetExtension(file).ToLower() == ".json")
@@ -502,9 +498,14 @@ namespace Client
                     fileNames.Add(Path.GetFileName(file));
 
                 }
-
-
             }
+
+            foreach (var directory in directories)
+            {
+                fileNames.Add(Path.GetFileName(directory));
+            }
+
+
             fileNames.Add(SELECTION_BACK);
 
 

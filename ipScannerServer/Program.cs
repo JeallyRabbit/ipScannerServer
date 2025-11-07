@@ -92,9 +92,7 @@ namespace MyApp
 
             int menu = MENU_DATABASE_CONNECTION_TYPE;
 
-            //debugging
-            menu = MENU_PROCESS_SERVER_SIDE;
-            //
+
 
 
             var choice = "";
@@ -336,9 +334,7 @@ namespace MyApp
                 {
                     //waiting and operating connections from clients
 
-                    //debuggiing
-                    connectionString = $"Host=localhost;Port=5432;Database=postgres;User Id=postgres;Password=Ushallpa$$";
-                    //
+
 
                     var builder = WebApplication.CreateBuilder(args);
                     builder.WebHost.ConfigureKestrel(options =>
@@ -381,14 +377,18 @@ namespace MyApp
 
                             var senderHostname = context.Request.Headers["Client-Hostname"].ToString();
 
+                            //TODO
+                            // add setting lease_end_date
+
                             var sql = @"
                             UPDATE devices AS d
                             SET lease_owner = @leaseOwner
                             FROM (
-                                SELECT ip as address,
+                                SELECT ip AS address,
                                 hostname AS hostname,
-                                last_checked_date as lastCheckedDate
+                                last_checked_date AS lastCheckedDate
                                 FROM devices
+                                WHERE lease_owner IS NULL
                                 ORDER BY last_checked_date ASC
                                 LIMIT 10
                             ) AS oldest
@@ -400,12 +400,13 @@ namespace MyApp
 
                             var rows = await conn.QueryAsync<IP>(sql, new { leaseOwner = senderHostname });
 
+                            /*
                             foreach (var row in rows)
                             {
-
-                                //lease_woner - ip of host requesting GET
+                                
                                 AnsiConsole.MarkupLine($"{row.address} {row.hostname} {row.lastCheckedDate}");
                             }
+                            */
 
 
                             return Results.Ok(rows);
@@ -421,13 +422,12 @@ namespace MyApp
                             {
 
 
-                                string aux = null;
                                 if (pc.successFinding == true)
                                 {
 
                                     string sqlResponse = @"
                                 UPDATE devices
-                                set lease_owner='',
+                                set lease_owner=NULL,
                                 hostname = @Hostname,
                                 last_logged_user = @LastLoggedUser, 
                                 last_checked_date = @lastCheckedDate,
@@ -437,17 +437,15 @@ namespace MyApp
                                     var rows = await conn.QueryAsync<IP>(sqlResponse, new { Hostname = pc.hostname, LastLoggedUser = pc.lastLoggedUser, LastFoundDate = pc.lastFoundDate.Date, lastCheckedDate = pc.lastCheckedDate, Address = pc.address });
 
                                 }
-                                else
+                                else // successFinding==false
                                 {
                                     string sqlResponse = @"
                                 UPDATE devices
                                 set lease_owner=NULL,
-                                hostname = @Hostname,
-                                last_logged_user = @LastLoggedUser,
                                 last_checked_date = @LastCheckedDate
                                 WHERE ip= @Address
                                 ";
-                                    var rows = await conn.QueryAsync<IP>(sqlResponse, new { Hostname = pc.hostname, LastCheckedDate = pc.lastCheckedDate, LastLoggedUser = pc.lastLoggedUser, Address = pc.address });
+                                    var rows = await conn.QueryAsync<IP>(sqlResponse, new { LastCheckedDate = pc.lastCheckedDate, Address = pc.address });
 
                                 }
 
@@ -459,6 +457,8 @@ namespace MyApp
 
 
                         });
+
+                        // add auto removing lease_owner after expiration
 
 
                         var shutdown = new ManualResetEventSlim(false);
