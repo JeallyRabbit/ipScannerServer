@@ -308,7 +308,6 @@ namespace Client
                     AnsiConsole.MarkupLine("Processing client side");
 
                     url = $"https://{serverData.getAddress()}:{serverData.getPort()}/api/pcs/oldest";
-                    var table = new Table();
 
                     try
                     {
@@ -320,16 +319,9 @@ namespace Client
                         List<IP> addresses = client.GetFromJsonAsync<List<IP>>(url).GetAwaiter().GetResult();
 
 
-                        AnsiConsole.Live(table)
-                            .AutoClear(false)
-                            .StartAsync(async ctx =>
-                            {
-                                table.AddColumn(new TableColumn(new Markup("[green] IpAddress [/]")));
-                                table.AddColumn(new TableColumn("[blue] Hostname [/]"));
-                                table.AddColumn(new TableColumn("[blue] lastLoggedUser [/]"));
-                                table.AddColumn(new TableColumn("[blue] LastCheckedDate [/]"));
-                                table.AddColumn(new TableColumn("[blue] lastFoundDate [/]"));
-                            });
+
+
+
 
 
                         if (addresses is null)
@@ -343,6 +335,29 @@ namespace Client
                             List<ipResponse> ipResponses = new List<ipResponse>();
 
 
+                            var cts = new CancellationTokenSource();
+                            Console.CancelKeyPress += (_, e) => { e.Cancel = true; cts.Cancel(); };
+
+                            var table = new Spectre.Console.Table();
+
+                            AnsiConsole.Live(table)
+                            .AutoClear(false)
+                            .StartAsync(async ctx =>
+                            {
+
+                                var refresh = TimeSpan.FromMilliseconds(100);
+                                while (!cts.IsCancellationRequested)
+                                {
+                                    ctx.UpdateTarget(BuildTable(addresses, ipResponses));
+                                    await Task.Delay(refresh, cts.Token).ContinueWith(_ => { });
+                                }
+                            });
+
+
+
+
+
+
 
 
 
@@ -351,7 +366,7 @@ namespace Client
                                 Ping pingSender = new Ping();
 
                                 int pingCounter = 0;
-                                string data = "a";
+                                string data = "aa";
                                 byte[] buffer = Encoding.ASCII.GetBytes(data);
 
                                 ipResponse response = new ipResponse(ip.address.ToString(), DateTime.Now);
@@ -394,8 +409,10 @@ namespace Client
 
                                             foreach (ManagementObject mo in searcher.Get())
                                             {
-                                                //AnsiConsole.MarkupLine($"UserName on {pingAddress}:[green] {mo["UserName"]}[/]");
-                                                //AnsiConsole.MarkupLine($" UserName: {mo["UserName"]}");
+                                                //TODO:
+                                                // mo["UserName"].ToString(); can throw:
+                                                //System.NullReferenceException: 'Object reference not set to an instance of an object.'
+                                                //System.Management.ManagementBaseObject.this[string].get returned null.
                                                 response.lastLoggedUser = mo["UserName"].ToString();
                                             }
 
@@ -404,9 +421,9 @@ namespace Client
                                         }
                                         catch (Exception ex)
                                         {
-                                            Console.WriteLine($"Error from: {ex.Source}");
-                                            Console.WriteLine(ex.GetType());
-                                            Console.WriteLine($"1. Error: {response.hostname}: {ex.Message}");
+                                            //Console.WriteLine($"Error from: {ex.Source}");
+                                            //Console.WriteLine(ex.GetType());
+                                            //Console.WriteLine($"1. Error: {response.hostname}: {ex.Message}");
                                         }
 
                                         pingSuccess = true;
@@ -422,41 +439,7 @@ namespace Client
                                     pingCounter++;
 
 
-                                    //for printing
-                                    var doneCount = ipResponses.Count();
-                                    foreach (var res in ipResponses)
-                                    {
-                                        if (res.successFinding)
-                                        {
-                                            table.AddRow(res.address, res.hostname, res.lastLoggedUser, res.lastCheckedDate.ToString(), res.lastFoundDate.ToString());
 
-                                        }
-                                        else
-                                        {
-                                            table.AddRow(res.address, "----", "----", res.lastCheckedDate.ToString(), res.lastFoundDate.ToString());
-
-                                        }
-                                    }
-
-                                    foreach (var auxIp in addresses)
-                                    {
-                                        if (doneCount > 0) { doneCount--; continue; }
-
-                                        if (auxIp.address == ip.address)
-                                        {
-                                            var auxAddress = auxIp.address;
-                                            for (int i = 0; i <= pingCounter; i++)
-                                            {
-                                                auxAddress += "*";
-                                            }
-                                        }
-
-
-                                        table.AddRow(auxIp.address, "", "", "", "");
-                                    }
-
-                                    ///////
-                                    ///
 
                                 }
 
@@ -498,6 +481,58 @@ namespace Client
             }
         }
 
+
+        static Spectre.Console.Table BuildTable(List<IP> addresses, List<ipResponse> ipResponses)
+        {
+            var tab = new Spectre.Console.Table();
+            tab.Title("[bold]Live Ping[/]  (Ctrl+C to stop)");
+            tab.AddColumn(new TableColumn(new Markup("[green] IpAddress [/]")));
+            tab.AddColumn(new TableColumn("[blue] Hostname [/]"));
+            tab.AddColumn(new TableColumn("[blue] lastLoggedUser [/]"));
+            tab.AddColumn(new TableColumn("[blue] LastCheckedDate [/]"));
+            tab.AddColumn(new TableColumn("[blue] lastFoundDate [/]"));
+
+            tab.AddRow("a");
+            int responsesAmount = ipResponses.Count();
+            if (responsesAmount > 0)
+            {
+                foreach (var re in ipResponses)
+                {
+                    var addr = new Markup($"{re.address.ToString()}");
+                    var hostname = new Markup($"{re.hostname.ToString()}");
+                    var lastLoggedUser = new Markup($"{re.lastLoggedUser.ToString()}");
+                    if (!re.successFinding)
+                    {
+
+                        tab.AddRow($"[red]{re.address.ToString()}[/]", "[red] - not found -[/]", "[red] - not found -[/]", re.lastCheckedDate.ToString(), re.lastFoundDate.ToString());
+
+                    }
+                    else
+                    {
+                        tab.AddRow($"[green]{re.address.ToString()}[/]", re.hostname.ToString(), re.lastLoggedUser.ToString(), $"[green]{re.lastCheckedDate.ToString()}[/]", $"[green]{re.lastFoundDate.ToString()}[/]");
+
+                    }
+                }
+            }
+
+            var i = 0;
+            if (addresses.Count() > 0)
+            {
+                foreach (var re in addresses)
+                {
+                    if (i >= responsesAmount)
+                    {
+                        tab.AddRow(re.address.ToString(), "---", "---", re.lastCheckedDate.ToString(), "---");
+                    }
+
+                    i++;
+                }
+
+            }
+
+
+            return tab;
+        }
         private static async Task sendResponseToServer(string serverIp, string serverPort, HttpClient client, List<ipResponse> ipResponses)
         {
             string url = $"https://{serverIp}:{serverPort}/api/pcs/response";
