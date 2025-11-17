@@ -17,6 +17,8 @@ namespace Client
         public string address { get; set; }
         public string hostname { get; set; }
         public string lastLoggedUser { get; set; }
+
+        public string operatingSystem { get; set; }
         public DateTime lastCheckedDate { get; set; }
         public DateTime lastFoundDate { get; set; }
 
@@ -336,7 +338,10 @@ namespace Client
 
 
                             var cts = new CancellationTokenSource();
-                            Console.CancelKeyPress += (_, e) => { e.Cancel = true; cts.Cancel(); };
+                            Console.CancelKeyPress += (_, e) =>
+                            {
+                                e.Cancel = true; cts.Cancel();
+                            };
 
                             var table = new Spectre.Console.Table();
 
@@ -346,11 +351,20 @@ namespace Client
                             {
 
                                 var refresh = TimeSpan.FromMilliseconds(100);
-                                while (!cts.IsCancellationRequested)
+                                try
                                 {
-                                    ctx.UpdateTarget(BuildTable(addresses, ipResponses));
-                                    await Task.Delay(refresh, cts.Token).ContinueWith(_ => { });
+                                    while (!cts.IsCancellationRequested)
+                                    {
+                                        ctx.UpdateTarget(BuildTable(addresses, ipResponses));
+                                        await Task.Delay(refresh, cts.Token).ContinueWith(_ => { });
+                                    }
                                 }
+                                catch (OperationCanceledException)
+                                {
+                                    menu = MENU_CONNECT_TO_SERVER_TYPE;
+                                }
+
+
                             });
 
 
@@ -398,9 +412,8 @@ namespace Client
 
 
 
-                                        try
+                                        try// getting current logged user
                                         {
-
                                             var scope = new ManagementScope($@"\\{pingAddress}\root\cimv2");
                                             scope.Connect();
 
@@ -409,21 +422,48 @@ namespace Client
 
                                             foreach (ManagementObject mo in searcher.Get())
                                             {
-                                                //TODO:
-                                                // mo["UserName"].ToString(); can throw:
-                                                //System.NullReferenceException: 'Object reference not set to an instance of an object.'
-                                                //System.Management.ManagementBaseObject.this[string].get returned null.
+
                                                 response.lastLoggedUser = mo["UserName"].ToString();
                                             }
+                                        }//Console.WriteLine($"1. Error: {response.hostname}: {ex.Message}");
+                                        catch (Exception ex)
+                                        {
+                                            response.lastLoggedUser = "-";
+                                        }
 
+
+
+                                        try//getting windows version
+                                        {
+                                            var scope = new ManagementScope($@"\\{pingAddress}\root\cimv2");
+                                            scope.Connect();
+
+                                            // Win32_OperatingSystem instead of Win32_ComputerSystem
+                                            var query = new ObjectQuery(
+                                                "SELECT Caption, Version, BuildNumber FROM Win32_OperatingSystem");
+
+                                            using var searcher = new ManagementObjectSearcher(scope, query);
+                                            using var results = searcher.Get();
+
+                                            foreach (ManagementObject os in results)
+                                            {
+                                                var caption = (string?)os["Caption"];
+                                                var version = (string?)os["Version"];
+                                                var buildStr = (string?)os["BuildNumber"];
+
+                                                int.TryParse(buildStr, out var build);
+
+                                                // Windows 11 starts at build 22000
+                                                var isWindows11 = build >= 22000;
+
+                                                response.operatingSystem = isWindows11 ? "Windows 11" : "Windows 10";
+                                            }
 
 
                                         }
                                         catch (Exception ex)
                                         {
-                                            //Console.WriteLine($"Error from: {ex.Source}");
-                                            //Console.WriteLine(ex.GetType());
-                                            //Console.WriteLine($"1. Error: {response.hostname}: {ex.Message}");
+                                            response.operatingSystem = "-";
                                         }
 
                                         pingSuccess = true;
@@ -490,6 +530,7 @@ namespace Client
             tab.AddColumn(new TableColumn("[blue] Hostname [/]"));
             tab.AddColumn(new TableColumn("[blue] lastLoggedUser [/]"));
             tab.AddColumn(new TableColumn("[blue] LastCheckedDate [/]"));
+            tab.AddColumn(new TableColumn("[blue] OperatingSystem [/]"));
             tab.AddColumn(new TableColumn("[blue] lastFoundDate [/]"));
 
             tab.AddRow("a");
@@ -504,12 +545,12 @@ namespace Client
                     if (!re.successFinding)
                     {
 
-                        tab.AddRow($"[red]{re.address.ToString()}[/]", "[red] - not found -[/]", "[red] - not found -[/]", re.lastCheckedDate.ToString(), re.lastFoundDate.ToString());
+                        tab.AddRow($"[red]{re.address.ToString()}[/]", "[red] - not found -[/]", "[red] - not found -[/]", re.lastCheckedDate.ToString(), "-", re.lastFoundDate.ToString());
 
                     }
                     else
                     {
-                        tab.AddRow($"[green]{re.address.ToString()}[/]", re.hostname.ToString(), re.lastLoggedUser.ToString(), $"[green]{re.lastCheckedDate.ToString()}[/]", $"[green]{re.lastFoundDate.ToString()}[/]");
+                        tab.AddRow($"[green]{re.address.ToString()}[/]", re.hostname.ToString(), re.lastLoggedUser.ToString(), $"[green]{re.lastCheckedDate.ToString()}[/]", $"[green]{re.operatingSystem.ToString()}[/]", $"[green]{re.lastFoundDate.ToString()}[/]");
 
                     }
                 }

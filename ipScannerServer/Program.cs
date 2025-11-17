@@ -43,6 +43,7 @@ namespace MyApp
         public string address { get; set; }
         public string hostname { get; set; }
         public string lastLoggedUser { get; set; }
+        public string operatingSystem { get; set; }
         public DateTime lastCheckedDate { get; set; }
         public DateTime lastFoundDate { get; set; }
 
@@ -78,6 +79,7 @@ namespace MyApp
         const int MENU_DATABASE_JSON = 2;
         const int MENU_DATABASE_INPUT = 3;
         const int MENU_PROCESS_SERVER_SIDE = 4;
+        const int CLEAR_LEASE_OWNERS_INTERVAL = 10000;// 10 sec between clearing lease_owners in database
 
 
         const string SELECTION_BACK = "back";
@@ -336,6 +338,7 @@ namespace MyApp
 
 
 
+
                     var builder = WebApplication.CreateBuilder(args);
                     builder.WebHost.ConfigureKestrel(options =>
                     {
@@ -369,6 +372,37 @@ namespace MyApp
 
                     if (successConnectToDataBase || cs != "")
                     {
+
+                        //clearing expired lease_onwers
+                        var t = Task.Run(async () =>
+                        {
+                            while (true)
+                            {
+                                var sql = @"
+                            UPDATE devices
+                            SET lease_owner = NULL
+                            WHERE lease_end_date < CURRENT_DATE
+                            ";
+                                try
+                                {
+                                    await using var conn = new NpgsqlConnection(cs);
+
+                                    var rows = await conn.QueryAsync<IP>(sql);
+
+                                    //return Results.Ok(rows);
+                                }
+                                catch (System.ArgumentNullException ex)
+                                {
+                                    Console.WriteLine(ex);
+                                    //return Results.NotFound();
+                                }
+
+
+                                await Task.Delay(CLEAR_LEASE_OWNERS_INTERVAL);
+                            }
+                        });
+
+
                         var app = builder.Build();
 
                         // GET /api/pcs/oldest  →  returns 10 PCs with oldest last_checked_date
@@ -382,7 +416,8 @@ namespace MyApp
 
                             var sql = @"
                             UPDATE devices AS d
-                            SET lease_owner = @leaseOwner
+                            SET lease_owner = @leaseOwner,
+                            lease_end_date = NOW() + INTERVAL '5 minutes'
                             FROM (
                                 SELECT ip AS address,
                                 hostname AS hostname,
@@ -431,10 +466,11 @@ namespace MyApp
                                 hostname = @Hostname,
                                 last_logged_user = @LastLoggedUser, 
                                 last_checked_date = @lastCheckedDate,
+                                operating_system = @operatingSystem,
                                 last_found_date = @LastFoundDate
                                 WHERE ip= @Address
                                 ";
-                                    var rows = await conn.QueryAsync<IP>(sqlResponse, new { Hostname = pc.hostname, LastLoggedUser = pc.lastLoggedUser, LastFoundDate = pc.lastFoundDate.Date, lastCheckedDate = pc.lastCheckedDate, Address = pc.address });
+                                    var rows = await conn.QueryAsync<IP>(sqlResponse, new { Hostname = pc.hostname, LastLoggedUser = pc.lastLoggedUser, LastFoundDate = pc.lastFoundDate.Date, OperatingSystem = pc.operatingSystem, Address = pc.address });
 
                                 }
                                 else // successFinding==false
