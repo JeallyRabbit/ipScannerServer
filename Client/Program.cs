@@ -22,7 +22,7 @@ namespace Client
         public DateTime lastCheckedDate { get; set; }
         public DateTime lastFoundDate { get; set; }
 
-        public bool successFinding;
+        public bool successFinding { get; set; }
 
         public ipResponse(string address, DateTime lastCheckedDate)
         {
@@ -94,9 +94,9 @@ namespace Client
         const string SELECTION_BACK = "back";
         const string NO_LOGGED_USER = "no_user";
 
-        const int PING_TIMEOUT = 2000;//5 sec
+        const int PING_TIMEOUT = 1000;//2
 
-
+        const int FRAMES = 4;
 
 
         public static string url = "";
@@ -306,10 +306,12 @@ namespace Client
                 else if (menu == MENU_PROCESS_CLIENT)
                 {
 
-                    Console.Clear();
+                    AnsiConsole.Clear();
                     AnsiConsole.MarkupLine("Processing client side");
 
                     url = $"https://{serverData.getAddress()}:{serverData.getPort()}/api/pcs/oldest";
+
+
 
                     try
                     {
@@ -319,11 +321,6 @@ namespace Client
 
 
                         List<IP> addresses = client.GetFromJsonAsync<List<IP>>(url).GetAwaiter().GetResult();
-
-
-
-
-
 
 
                         if (addresses is null)
@@ -337,35 +334,54 @@ namespace Client
                             List<ipResponse> ipResponses = new List<ipResponse>();
 
 
+
+                            //For stoping scanning
                             var cts = new CancellationTokenSource();
+
                             Console.CancelKeyPress += (_, e) =>
                             {
-                                e.Cancel = true; cts.Cancel();
+                                e.Cancel = true;
+                                cts.Cancel();
                             };
 
                             var table = new Spectre.Console.Table();
 
-                            AnsiConsole.Live(table)
-                            .AutoClear(false)
-                            .StartAsync(async ctx =>
+                            try
                             {
+                                AnsiConsole.Live(table)
+                               .AutoClear(true)
+                               .StartAsync(async ctx =>
+                               {
 
-                                var refresh = TimeSpan.FromMilliseconds(100);
-                                try
-                                {
-                                    while (!cts.IsCancellationRequested)
-                                    {
-                                        ctx.UpdateTarget(BuildTable(addresses, ipResponses));
-                                        await Task.Delay(refresh, cts.Token).ContinueWith(_ => { });
-                                    }
-                                }
-                                catch (OperationCanceledException)
-                                {
-                                    menu = MENU_CONNECT_TO_SERVER_TYPE;
-                                }
+                                   var refresh = TimeSpan.FromMilliseconds(100);
+                                   int frame = 0;
+                                   while (!cts.IsCancellationRequested)
+                                   {
+                                       ctx.UpdateTarget(BuildTable(ipResponses, addresses, frame));
+                                       frame++;
+                                       if (frame >= FRAMES)
+                                       {
+                                           frame = 0;
+                                       }
+                                       await Task.Delay(refresh, cts.Token).ContinueWith(_ => { });
+                                   }
+                                   throw new OperationCanceledException();
+                               });
 
 
-                            });
+
+
+                            }
+                            catch (OperationCanceledException ex)
+                            {
+                                AnsiConsole.MarkupLine("[yellow]Stopping live view...[/]");
+                                AnsiConsole.MarkupLine("[yellow]Scan stopped[/]");
+                                AnsiConsole.Markup("[grey]Press [bold]<Enter>[/] to continue...[/]");
+                                Console.ReadLine();
+                                AnsiConsole.Clear();
+                                menu = MENU_CONNECT_TO_SERVER_TYPE;
+                            }
+
 
 
 
@@ -377,6 +393,16 @@ namespace Client
 
                             foreach (var ip in addresses)
                             {
+                                if (cts.IsCancellationRequested)
+                                {
+                                    menu = MENU_CONNECT_TO_SERVER_TYPE;
+                                    //AnsiConsole.Clear();
+                                    //AnsiConsole.Write(BuildTable(ipResponses, null));
+                                    AnsiConsole.MarkupLine("[yellow]Scan stopped[/]");
+                                    AnsiConsole.Markup("[grey]Press [bold]<Enter>[/] to continue...[/]");
+                                    Console.ReadLine();
+                                    break;
+                                }
                                 Ping pingSender = new Ping();
 
                                 int pingCounter = 0;
@@ -422,8 +448,15 @@ namespace Client
 
                                             foreach (ManagementObject mo in searcher.Get())
                                             {
+                                                try
+                                                {
 
-                                                response.lastLoggedUser = mo["UserName"].ToString();
+                                                    response.lastLoggedUser = mo["UserName"].ToString();
+                                                }
+                                                catch (System.NullReferenceException ex)
+                                                {
+                                                    response.lastLoggedUser = "-";
+                                                }
                                             }
                                         }//Console.WriteLine($"1. Error: {response.hostname}: {ex.Message}");
                                         catch (Exception ex)
@@ -498,12 +531,10 @@ namespace Client
                             }
 
                             //sending response to server
-                            // Send PUT request with JSON body
-                            //AnsiConsole.Markup("[grey]Before sending response[/]");
                             sendResponseToServer(serverData.getAddress(), serverData.getPort(), client, ipResponses).Wait();
 
-                            //AnsiConsole.Markup("[grey]Press [bold]<Enter>[/] to continue (after sending response)...[/]");
-                            //Console.ReadLine();
+                            //stoping displaying table
+                            cts.Cancel();
                         }
 
 
@@ -522,8 +553,9 @@ namespace Client
         }
 
 
-        static Spectre.Console.Table BuildTable(List<IP> addresses, List<ipResponse> ipResponses)
+        static Spectre.Console.Table BuildTable(List<ipResponse> ipResponses, List<IP> addresses = null, int counter = 0)
         {
+            addresses = addresses ?? new List<IP>();
             var tab = new Spectre.Console.Table();
             tab.Title("[bold]Live Ping[/]  (Ctrl+C to stop)");
             tab.AddColumn(new TableColumn(new Markup("[green] IpAddress [/]")));
@@ -533,7 +565,6 @@ namespace Client
             tab.AddColumn(new TableColumn("[blue] OperatingSystem [/]"));
             tab.AddColumn(new TableColumn("[blue] lastFoundDate [/]"));
 
-            tab.AddRow("a");
             int responsesAmount = ipResponses.Count();
             if (responsesAmount > 0)
             {
@@ -557,13 +588,24 @@ namespace Client
             }
 
             var i = 0;
+            bool isFirst = true;
             if (addresses.Count() > 0)
             {
                 foreach (var re in addresses)
                 {
                     if (i >= responsesAmount)
                     {
-                        tab.AddRow(re.address.ToString(), "---", "---", re.lastCheckedDate.ToString(), "---");
+                        if (isFirst)
+                        {
+                            List<string> frames = new List<string> { "-", "/", "|", "\\" };
+                            tab.AddRow(re.address.ToString(), frames[counter], "---", re.lastCheckedDate.ToString(), "---");
+                            isFirst = false;
+                        }
+                        else
+                        {
+                            tab.AddRow(re.address.ToString(), "---", "---", re.lastCheckedDate.ToString(), "---");
+                        }
+
                     }
 
                     i++;
@@ -571,7 +613,7 @@ namespace Client
 
             }
 
-
+            tab.Collapse();
             return tab;
         }
         private static async Task sendResponseToServer(string serverIp, string serverPort, HttpClient client, List<ipResponse> ipResponses)

@@ -47,7 +47,7 @@ namespace MyApp
         public DateTime lastCheckedDate { get; set; }
         public DateTime lastFoundDate { get; set; }
 
-        public bool successFinding;
+        public bool successFinding { get; set; }
 
         public ipResponse(string address, DateTime lastCheckedDate)
         {
@@ -411,8 +411,6 @@ namespace MyApp
 
                             var senderHostname = context.Request.Headers["Client-Hostname"].ToString();
 
-                            //TODO
-                            // add setting lease_end_date
 
                             var sql = @"
                             UPDATE devices AS d
@@ -465,12 +463,20 @@ namespace MyApp
                                 set lease_owner=NULL,
                                 hostname = @Hostname,
                                 last_logged_user = @LastLoggedUser, 
-                                last_checked_date = @lastCheckedDate,
-                                operating_system = @operatingSystem,
+                                last_checked_date = @LastCheckedDate,
+                                operating_system = @OperatingSystem,
                                 last_found_date = @LastFoundDate
                                 WHERE ip= @Address
                                 ";
-                                    var rows = await conn.QueryAsync<IP>(sqlResponse, new { Hostname = pc.hostname, LastLoggedUser = pc.lastLoggedUser, LastFoundDate = pc.lastFoundDate.Date, OperatingSystem = pc.operatingSystem, Address = pc.address });
+                                    var rows = await conn.QueryAsync<IP>(sqlResponse, new
+                                    {
+                                        Hostname = pc.hostname,
+                                        LastLoggedUser = pc.lastLoggedUser,
+                                        LastFoundDate = pc.lastFoundDate.Date,
+                                        OperatingSystem = pc.operatingSystem,
+                                        Address = pc.address,
+                                        LastCheckedDate = pc.lastCheckedDate
+                                    });
 
                                 }
                                 else // successFinding==false
@@ -485,7 +491,7 @@ namespace MyApp
 
                                 }
 
-                                Console.WriteLine($"IP: {pc.address}, Hostname: {pc.hostname}, LastCheckedDate: {pc.lastCheckedDate}");
+                                Console.WriteLine($"IP: {pc.address},successFinding: {pc.successFinding}, Hostname: {pc.hostname}, LastCheckedDate: {pc.lastCheckedDate}");
 
 
                             }
