@@ -8,7 +8,6 @@ using System.Text;
 using System.Text.Json;
 using System.Text.Json.Serialization;
 
-
 namespace Client
 {
 
@@ -38,6 +37,8 @@ namespace Client
         public string address { get; set; }
         public string hostname { get; set; }
         public string lastCheckedDate { get; set; }
+
+        public bool isOperated { get; set; }
 
         public IP(string address, string hostname, string lastCheckedDate)
         {
@@ -94,13 +95,13 @@ namespace Client
         const string SELECTION_BACK = "back";
         const string NO_LOGGED_USER = "no_user";
 
-        const int PING_TIMEOUT = 1000;//2
+        const int PING_TIMEOUT = 1000;
 
         const int FRAMES = 4;
 
 
         public static string url = "";
-        static void Main(string[] args)
+        static async Task Main(string[] args)
         {
             string currentDir = Directory.GetCurrentDirectory();
 
@@ -110,6 +111,10 @@ namespace Client
             int port = 60719;
             string connectionString = "";
             Server serverData = null;
+
+            // Used to check if already started displaying data - to not start multiple workers
+            bool startedDisplaying = false;
+
             while (true)
             {
 
@@ -125,10 +130,10 @@ namespace Client
                     new SelectionPrompt<string>()
                     .Title("Choose client connection configuration method:")
                     .PageSize(5)
-                    .AddChoices(new[] { "Load from .JSON", "Input manually", "Return" }));
+                    .AddChoices(new[] { "Load from .JSON", "Input manually", "Exit" }));
 
-
-
+                    //resseting state of displaying live data of scanner
+                    startedDisplaying = false;
 
                     if (clientConnectionChoice == "Load from .JSON")
                     {
@@ -138,7 +143,7 @@ namespace Client
                     {
                         menu = MENU_CLIENT_INPUT;
                     }
-                    else if (clientConnectionChoice == "Return")
+                    else if (clientConnectionChoice == "Exit")
                     {
                         menu = MENU_SERVER_CLIENT;
 
@@ -177,8 +182,6 @@ namespace Client
 
                         if (serverData is not null)
                         {
-                            // create required objects to connect to server
-                            //add pringint what was read
                             var jsonPrint = new Spectre.Console.Json.JsonText(
                            $$"""
                             { 
@@ -312,7 +315,6 @@ namespace Client
                     url = $"https://{serverData.getAddress()}:{serverData.getPort()}/api/pcs/oldest";
 
 
-
                     try
                     {
 
@@ -330,7 +332,15 @@ namespace Client
                         }
                         else
                         {
+                            addresses.Sort((a, b) => a.address.CompareTo(b.address));
 
+                            foreach (var a in addresses)
+                            {
+                                a.isOperated = false;
+                            }
+
+
+                            // List into which put results of scanning
                             List<ipResponse> ipResponses = new List<ipResponse>();
 
 
@@ -344,65 +354,39 @@ namespace Client
                                 cts.Cancel();
                             };
 
+
                             var table = new Spectre.Console.Table();
 
-                            try
+
+
+
+
+
+
+
+                            //foreach (var ip in addresses)
+                            var scanTask = Parallel.ForEachAsync(
+                                addresses,
+                                new ParallelOptions { CancellationToken = cts.Token },
+                                async (ip, ct) =>
                             {
-                                AnsiConsole.Live(table)
-                               .AutoClear(true)
-                               .StartAsync(async ctx =>
-                               {
-
-                                   var refresh = TimeSpan.FromMilliseconds(100);
-                                   int frame = 0;
-                                   while (!cts.IsCancellationRequested)
-                                   {
-                                       ctx.UpdateTarget(BuildTable(ipResponses, addresses, frame));
-                                       frame++;
-                                       if (frame >= FRAMES)
-                                       {
-                                           frame = 0;
-                                       }
-                                       await Task.Delay(refresh, cts.Token).ContinueWith(_ => { });
-                                   }
-                                   throw new OperationCanceledException();
-                               });
-
-
-
-
-                            }
-                            catch (OperationCanceledException ex)
-                            {
-                                AnsiConsole.MarkupLine("[yellow]Stopping live view...[/]");
-                                AnsiConsole.MarkupLine("[yellow]Scan stopped[/]");
-                                AnsiConsole.Markup("[grey]Press [bold]<Enter>[/] to continue...[/]");
-                                Console.ReadLine();
-                                AnsiConsole.Clear();
-                                menu = MENU_CONNECT_TO_SERVER_TYPE;
-                            }
+                                ip.isOperated = true;
 
 
 
 
 
-
-
-
-
-
-                            foreach (var ip in addresses)
-                            {
+                                /*
                                 if (cts.IsCancellationRequested)
                                 {
                                     menu = MENU_CONNECT_TO_SERVER_TYPE;
-                                    //AnsiConsole.Clear();
-                                    //AnsiConsole.Write(BuildTable(ipResponses, null));
                                     AnsiConsole.MarkupLine("[yellow]Scan stopped[/]");
                                     AnsiConsole.Markup("[grey]Press [bold]<Enter>[/] to continue...[/]");
                                     Console.ReadLine();
                                     break;
                                 }
+                                */
+
                                 Ping pingSender = new Ping();
 
                                 int pingCounter = 0;
@@ -448,19 +432,15 @@ namespace Client
 
                                             foreach (ManagementObject mo in searcher.Get())
                                             {
-                                                try
-                                                {
 
-                                                    response.lastLoggedUser = mo["UserName"].ToString();
-                                                }
-                                                catch (System.NullReferenceException ex)
-                                                {
-                                                    response.lastLoggedUser = "-";
-                                                }
+                                                var aux = mo["UserName"];
+                                                response.lastLoggedUser = aux?.ToString() ?? "-";
+
                                             }
-                                        }//Console.WriteLine($"1. Error: {response.hostname}: {ex.Message}");
+                                        }
                                         catch (Exception ex)
                                         {
+                                            //never catched that exception too
                                             response.lastLoggedUser = "-";
                                         }
 
@@ -501,13 +481,7 @@ namespace Client
 
                                         pingSuccess = true;
                                         response.successFinding = true;
-                                        //AnsiConsole.Markup("[blue]Press [bold]<Enter>[/] to continue...[/]");
-                                        //Console.ReadLine();
                                         break;
-                                    }
-                                    else
-                                    {
-                                        //AnsiConsole.Markup("[red]*[/]");
                                     }
                                     pingCounter++;
 
@@ -518,20 +492,74 @@ namespace Client
 
                                 if (pingSuccess == false)
                                 {
-
                                     response.successFinding = false;
-                                    //AnsiConsole.MarkupLine($"[red] Failed to connect to:[/] {ip.address.ToString()}");
                                 }
 
                                 ipResponses.Add(response);
-
+                                ip.isOperated = false;
 
 
 
                             }
+                            );//for parallel
+
+
+                            //Printing progress
+                            try
+                            {
+
+                                AnsiConsole.Live(table)
+                               .AutoClear(true)
+                               .StartAsync(async ctx =>
+                               {
+                                   startedDisplaying = true;
+                                   var refresh = TimeSpan.FromMilliseconds(200);
+                                   int frame = 0;
+                                   while (!cts.IsCancellationRequested && ipResponses.Count() != addresses.Count())
+                                   {
+                                       //AnsiConsole.Clear();
+                                       ctx.UpdateTarget(BuildTable(ipResponses, addresses, frame));
+
+
+                                       frame++;
+                                       if (frame >= FRAMES)
+                                       {
+                                           frame = 0;
+                                       }
+                                       await Task.Delay(refresh, cts.Token).ContinueWith(_ => { });
+                                   }
+                                   throw new OperationCanceledException("Cancel");
+                               });
+
+                            }
+                            catch (OperationCanceledException ex)
+                            {
+                                AnsiConsole.MarkupLine("[yellow]Stopping live view...[/]");
+                                AnsiConsole.MarkupLine("[yellow]Scan stopped[/]");
+                                AnsiConsole.Markup("[grey]Press [bold]<Enter>[/] to continue...[/]");
+                                Console.ReadLine();
+                                AnsiConsole.Clear();
+                                menu = MENU_CONNECT_TO_SERVER_TYPE;
+                            }
+
+
+
+                            await scanTask;
 
                             //sending response to server
                             sendResponseToServer(serverData.getAddress(), serverData.getPort(), client, ipResponses).Wait();
+
+
+
+                            if (cts.IsCancellationRequested)
+                            {
+                                menu = MENU_CONNECT_TO_SERVER_TYPE;
+                                AnsiConsole.MarkupLine("[yellow]Scan stopped[/]");
+                                AnsiConsole.Markup("[grey]Press [bold]<Enter>[/] to continue...[/]");
+                                Console.ReadLine();
+                                break;
+                            }
+
 
                             //stoping displaying table
                             cts.Cancel();
@@ -542,7 +570,7 @@ namespace Client
                     catch (Exception ex)
                     {
                         Console.WriteLine($"[2 Error] {ex.GetType()} {ex.Message}");
-                        Console.WriteLine($"Url: {url}");
+                        //Console.WriteLine($"Url: {url}");
                         AnsiConsole.Markup("[grey]Press [bold]<Enter>[/] to continue (errorrrrrr)...[/]");
                         Console.ReadLine();
                     }
@@ -551,6 +579,7 @@ namespace Client
                 }
             }
         }
+
 
 
         static Spectre.Console.Table BuildTable(List<ipResponse> ipResponses, List<IP> addresses = null, int counter = 0)
@@ -587,19 +616,16 @@ namespace Client
                 }
             }
 
-            var i = 0;
-            bool isFirst = true;
             if (addresses.Count() > 0)
             {
                 foreach (var re in addresses)
                 {
-                    if (i >= responsesAmount)
+                    if (!(ipResponses.Any(x => x.address == re.address)))
                     {
-                        if (isFirst)
+                        if (re.isOperated)
                         {
-                            List<string> frames = new List<string> { "-", "/", "|", "\\" };
-                            tab.AddRow(re.address.ToString(), frames[counter], "---", re.lastCheckedDate.ToString(), "---");
-                            isFirst = false;
+                            List<string> myFrames = new List<string> { "-", "/", "|", "\\" };
+                            tab.AddRow(re.address.ToString(), myFrames[counter], "---", re.lastCheckedDate.ToString(), "---");
                         }
                         else
                         {
@@ -608,14 +634,15 @@ namespace Client
 
                     }
 
-                    i++;
                 }
-
             }
 
             tab.Collapse();
             return tab;
         }
+
+
+
         private static async Task sendResponseToServer(string serverIp, string serverPort, HttpClient client, List<ipResponse> ipResponses)
         {
             string url = $"https://{serverIp}:{serverPort}/api/pcs/response";

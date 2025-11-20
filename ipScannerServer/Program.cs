@@ -80,7 +80,7 @@ namespace MyApp
         const int MENU_DATABASE_INPUT = 3;
         const int MENU_PROCESS_SERVER_SIDE = 4;
         const int CLEAR_LEASE_OWNERS_INTERVAL = 10000;// 10 sec between clearing lease_owners in database
-
+        const int REQUEST_PACKAGE_SIZE = 20;
 
         const string SELECTION_BACK = "back";
 
@@ -134,7 +134,7 @@ namespace MyApp
                     new SelectionPrompt<string>()
                     .Title("Choose server connection configuration method:")
                     .PageSize(5)
-                    .AddChoices(new[] { "Load from .JSON", "Input manually", "Return" }));
+                    .AddChoices(new[] { "Load from .JSON", "Input manually", "Exit" }));
 
 
 
@@ -147,7 +147,7 @@ namespace MyApp
                     {
                         menu = MENU_DATABASE_INPUT;
                     }
-                    else if (serverConnectionChoice == "Return")
+                    else if (serverConnectionChoice == "Exit")
                     {
                         menu = MENU_SERVER_CLIENT;
 
@@ -423,7 +423,7 @@ namespace MyApp
                                 FROM devices
                                 WHERE lease_owner IS NULL
                                 ORDER BY last_checked_date ASC
-                                LIMIT 10
+                                LIMIT @myLimit
                             ) AS oldest
                             WHERE d.ip = oldest.address
                             RETURNING d.ip AS address, d.hostname AS hostname, d.last_checked_date AS lastCheckedDate;
@@ -433,8 +433,14 @@ namespace MyApp
                             {
                                 await using var conn = new NpgsqlConnection(cs);
 
-                                var rows = await conn.QueryAsync<IP>(sql, new { leaseOwner = senderHostname });
+                                var rows = await conn.QueryAsync<IP>(sql, new { leaseOwner = senderHostname, myLimit = REQUEST_PACKAGE_SIZE });
 
+                                /*
+                                foreach (var r in rows)
+                                {
+                                    Console.WriteLine(r.address.ToString());
+                                }
+                                */
                                 return Results.Ok(rows);
                             }
                             catch (System.ArgumentNullException ex)
@@ -447,7 +453,7 @@ namespace MyApp
 
                         app.MapPut("/api/pcs/response", async (List<ipResponse> pcs) =>
                         {
-                            Console.WriteLine($"Received {pcs.Count} PCs");
+                            //Console.WriteLine($"Received {pcs.Count} PCs");
 
                             await using var conn = new NpgsqlConnection(cs);
 
@@ -491,7 +497,7 @@ namespace MyApp
 
                                 }
 
-                                Console.WriteLine($"IP: {pc.address},successFinding: {pc.successFinding}, Hostname: {pc.hostname}, LastCheckedDate: {pc.lastCheckedDate}");
+                                //Console.WriteLine($"IP: {pc.address},successFinding: {pc.successFinding}, Hostname: {pc.hostname}, LastCheckedDate: {pc.lastCheckedDate}");
 
 
                             }
