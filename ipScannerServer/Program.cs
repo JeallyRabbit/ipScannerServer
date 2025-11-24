@@ -88,7 +88,7 @@ namespace MyApp
         public static string url = "";
 
 
-        static void Main(string[] args)
+        static async Task Main(string[] args)
         {
             String currentDir = Directory.GetCurrentDirectory();
 
@@ -214,7 +214,7 @@ namespace MyApp
                             if (isJsonValid)
                             {
                                 var passwordInput = AnsiConsole.Prompt(
-                                                    new TextPrompt<string>($"[[postgres]] Enter user: {obj.getUsername()} password:").AllowEmpty().Secret());
+                                                    new TextPrompt<string>($"[[postgres]] Enter user: [red]{obj.getUsername()}[/] password:").AllowEmpty().Secret());
                                 string password = (passwordInput != "") ? passwordInput : "";
 
                                 connectionString = $"Host={obj.getAddress()};Port={obj.getPort()};Database={obj.getDatabaseName()};User Id={obj.getUsername()};Password={password};Ssl Mode=Disable";
@@ -243,7 +243,6 @@ namespace MyApp
                         Console.WriteLine("Chosen DIRECTORY");
                     }
 
-                    AnsiConsole.MarkupLine($"selected file extension {Path.GetExtension(fileSelection)}");
 
 
 
@@ -326,7 +325,7 @@ namespace MyApp
 
                     }
 
-                    connectionString = $"Host={serverNameInput};Port={portNumber};Database={dataBaseName};User Id={username};Password={password}";
+                    connectionString = $"Host={serverName};Port={portNumber};Database={dataBaseName};User Id={username};Password={password}";
 
                     menu = MENU_PROCESS_SERVER_SIDE;
 
@@ -350,27 +349,45 @@ namespace MyApp
                     });
 
 
-                    var cs = "";
                     bool successConnectToDataBase = true;
                     try
                     {
-                        cs = builder.Configuration.GetConnectionString("Postgres")
-                             ?? Environment.GetEnvironmentVariable("POSTGRES_CS")
-                             ?? connectionString
-                             ?? throw new InvalidOperationException("DB connection string missing.");
+
+                        //testing connection
+                        using var conn = new NpgsqlConnection(connectionString);
+                        await conn.OpenAsync();
+
                     }
                     catch (System.InvalidOperationException)
                     {
                         successConnectToDataBase = false;
-                        menu = 1;
+                        menu = MENU_DATABASE_CONNECTION_TYPE;
                         AnsiConsole.Markup("[grey]Press [bold]<Enter>[/] to continue...[/]");
                         Console.ReadLine();
 
-
+                    }
+                    catch (Npgsql.NpgsqlException ex)
+                    {
+                        successConnectToDataBase = false;
+                        menu = MENU_DATABASE_CONNECTION_TYPE;
+                        if (ex.SqlState == "28P01" || ex.SqlState == "28000")   // Invalid password for provided user
+                        {
+                            AnsiConsole.MarkupLine($"[red]{ex.Message}[/]");
+                            AnsiConsole.Markup("[grey]Press [bold]<Enter>[/] to continue...[/]");
+                            Console.ReadLine();
+                        }
+                    }
+                    catch (Exception ex)
+                    {
+                        successConnectToDataBase = false;
+                        menu = MENU_DATABASE_CONNECTION_TYPE;
+                        AnsiConsole.MarkupLine("[red]faled to connect to database[/]");
+                        AnsiConsole.MarkupLine(ex.Message);
+                        AnsiConsole.Markup("[grey]Press [bold]<Enter>[/] to continue...[/]");
+                        Console.ReadLine();
                     }
 
-
-                    if (successConnectToDataBase || cs != "")
+                    if (successConnectToDataBase)
                     {
 
                         //clearing expired lease_onwers
@@ -385,7 +402,7 @@ namespace MyApp
                             ";
                                 try
                                 {
-                                    await using var conn = new NpgsqlConnection(cs);
+                                    await using var conn = new NpgsqlConnection(connectionString);
 
                                     var rows = await conn.QueryAsync<IP>(sql);
 
@@ -431,7 +448,7 @@ namespace MyApp
 
                             try
                             {
-                                await using var conn = new NpgsqlConnection(cs);
+                                await using var conn = new NpgsqlConnection(connectionString);
 
                                 var rows = await conn.QueryAsync<IP>(sql, new { leaseOwner = senderHostname, myLimit = REQUEST_PACKAGE_SIZE });
 
@@ -448,6 +465,11 @@ namespace MyApp
                                 Console.WriteLine(ex);
                                 return Results.NotFound();
                             }
+                            catch (Exception ex)
+                            {
+                                Console.WriteLine(ex.Message);
+                                return Results.NotFound();
+                            }
 
                         });
 
@@ -455,7 +477,7 @@ namespace MyApp
                         {
                             //Console.WriteLine($"Received {pcs.Count} PCs");
 
-                            await using var conn = new NpgsqlConnection(cs);
+                            await using var conn = new NpgsqlConnection(connectionString);
 
                             foreach (var pc in pcs)
                             {

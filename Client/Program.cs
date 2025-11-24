@@ -1,12 +1,16 @@
-﻿using Spectre.Console;
-using System.Management;
+﻿using Microsoft.Management.Infrastructure;
+using Microsoft.Management.Infrastructure.Options;
+using Spectre.Console;
 using System.Net;
 using System.Net.Http.Json;
 using System.Net.NetworkInformation;
 using System.Net.Sockets;
+using System.Runtime.InteropServices;
+using System.Security;
 using System.Text;
 using System.Text.Json;
 using System.Text.Json.Serialization;
+
 
 namespace Client
 {
@@ -27,9 +31,10 @@ namespace Client
         {
             this.address = address;
             this.lastCheckedDate = lastCheckedDate;
-            lastLoggedUser = "";
-            hostname = "";
-            lastFoundDate = new DateTime();
+            this.lastLoggedUser = "";
+            this.hostname = "";
+            this.operatingSystem = "";
+            this.lastFoundDate = new DateTime();
         }
     }
     public class IP
@@ -88,7 +93,8 @@ namespace Client
         const int MENU_CONNECT_TO_SERVER_TYPE = 11;
         const int MENU_CLIENT_JSON = 12;
         const int MENU_CLIENT_INPUT = 13;
-        const int MENU_PROCESS_CLIENT = 14;
+        const int MENU_INPUT_CREDENTIALS = 14;
+        const int MENU_PROCESS_CLIENT = 15;
 
         const int MAX_PING_COUNTER = 3;
 
@@ -106,14 +112,17 @@ namespace Client
             string currentDir = Directory.GetCurrentDirectory();
 
             int menu = MENU_CONNECT_TO_SERVER_TYPE;
-            var choice = "";
             int height = AnsiConsole.Console.Profile.Height;
-            int port = 60719;
-            string connectionString = "";
             Server serverData = null;
 
             // Used to check if already started displaying data - to not start multiple workers
             bool startedDisplaying = false;
+
+            // Used for providing custom credentals to WMI
+            bool usingCustomCredentials = false;
+            string credentialsUsername = "";
+            SecureString credentialsPassword = ToSecureString();
+
 
             while (true)
             {
@@ -306,17 +315,58 @@ namespace Client
 
 
                 }
+                else if (menu == MENU_INPUT_CREDENTIALS)
+                {
+                    AnsiConsole.Clear();
+                    AnsiConsole.MarkupLine("Enter custom credentials:");
+                    usingCustomCredentials = true;
+                    var usernameInput = AnsiConsole.Prompt(
+                    new TextPrompt<string>($"[[{Environment.UserName.ToString()}]] Enter username:").AllowEmpty());
+                    credentialsUsername = usernameInput != "" ? usernameInput : Environment.UserName.ToString();
+
+
+
+
+                    var passwordInput = AnsiConsole.Prompt(
+                    new TextPrompt<string>("[[password]] Enter password:").AllowEmpty().Secret());
+                    credentialsPassword = passwordInput != "" ? ToSecureString(passwordInput) : ToSecureString("password");
+
+                    menu = MENU_PROCESS_CLIENT;
+                }
                 else if (menu == MENU_PROCESS_CLIENT)
                 {
 
+                    if (!usingCustomCredentials)
+                    {
+                        bool reqCustomCredentials = AnsiConsole.Prompt(
+                    new TextPrompt<bool>("Provide custom Credentials ?")
+                        .AddChoice(true)
+                        .AddChoice(false)
+                        .DefaultValue(true)
+                        .WithConverter(choice => choice ? "y" : "n"));
+
+
+                        bool isRunningOnLinux = RuntimeInformation.IsOSPlatform(OSPlatform.Linux);
+                        if ((isRunningOnLinux && !usingCustomCredentials) || reqCustomCredentials)
+                        {
+                            menu = MENU_INPUT_CREDENTIALS;
+                            continue;
+                        }
+                    }
+
+
+
+
+
                     AnsiConsole.Clear();
-                    AnsiConsole.MarkupLine("Processing client side");
+
 
                     url = $"https://{serverData.getAddress()}:{serverData.getPort()}/api/pcs/oldest";
 
 
                     try
                     {
+                        AnsiConsole.MarkupLine("Processing client side");
 
                         using var client = new HttpClient();
                         client.DefaultRequestHeaders.Add("Client-Hostname", Dns.GetHostName().ToString());
@@ -343,8 +393,6 @@ namespace Client
                             // List into which put results of scanning
                             List<ipResponse> ipResponses = new List<ipResponse>();
 
-
-
                             //For stoping scanning
                             var cts = new CancellationTokenSource();
 
@@ -357,35 +405,13 @@ namespace Client
 
                             var table = new Spectre.Console.Table();
 
-
-
-
-
-
-
-
                             //foreach (var ip in addresses)
                             var scanTask = Parallel.ForEachAsync(
                                 addresses,
-                                new ParallelOptions { CancellationToken = cts.Token },
+                                new ParallelOptions { CancellationToken = cts.Token, MaxDegreeOfParallelism = 1 },
                                 async (ip, ct) =>
                             {
                                 ip.isOperated = true;
-
-
-
-
-
-                                /*
-                                if (cts.IsCancellationRequested)
-                                {
-                                    menu = MENU_CONNECT_TO_SERVER_TYPE;
-                                    AnsiConsole.MarkupLine("[yellow]Scan stopped[/]");
-                                    AnsiConsole.Markup("[grey]Press [bold]<Enter>[/] to continue...[/]");
-                                    Console.ReadLine();
-                                    break;
-                                }
-                                */
 
                                 Ping pingSender = new Ping();
 
@@ -422,8 +448,17 @@ namespace Client
 
 
 
-                                        try// getting current logged user
+
+                                        try// getting current logged user on remote host
                                         {
+                                            /* // Works only for client running windows
+                                            var options = usingCustomCredentials ? new ConnectionOptions
+                                            {
+                                                Username = credentialsUsername,
+                                                Password = credentialsPassword
+                                            } : new ConnectionOptions();
+
+
                                             var scope = new ManagementScope($@"\\{pingAddress}\root\cimv2");
                                             scope.Connect();
 
@@ -437,17 +472,83 @@ namespace Client
                                                 response.lastLoggedUser = aux?.ToString() ?? "-";
 
                                             }
+                                            */
+
+                                            // That requires WinRM to be turned on the remote machine
+                                            var options = new WSManSessionOptions();
+                                            if (usingCustomCredentials)
+                                            { // for custom credentials on windows and linux always
+                                                string domainName = System.Net.NetworkInformation.IPGlobalProperties.GetIPGlobalProperties().DomainName;
+
+                                                var creds = new CimCredential(PasswordAuthenticationMechanism.Default, domainName, credentialsUsername, credentialsPassword);
+
+                                                options = new WSManSessionOptions();
+                                                options.AddDestinationCredentials(creds);
+                                            }
+
+                                            var session = CimSession.Create(pingAddress.ToString(), options);
+
+                                            var result = session.QueryInstances(
+                                                @"root\cimv2",
+                                                "WQL",
+                                                "SELECT Caption FROM Win32_ComputerSystem");
+
+                                            foreach (var item in result)
+                                            {
+
+                                                var user = item.CimInstanceProperties["UserName"].Value;
+                                                response.lastLoggedUser = user?.ToString() ?? "-";
+                                            }
+
                                         }
-                                        catch (Exception ex)
+                                        catch (UnauthorizedAccessException ex)
                                         {
-                                            //never catched that exception too
-                                            response.lastLoggedUser = "-";
+                                            // Wrong credentials or insufficient permissions.
+                                            AnsiConsole.MarkupLine($"[red]Insufficient[/] permissions to get current logged user on [yellow]{pingAddress}[/]");
+                                            AnsiConsole.Markup("[grey]Press [bold]<Enter>[/] to continue...[/]");
+                                            Console.ReadLine();
+                                            AnsiConsole.Clear();
+                                            menu = MENU_CONNECT_TO_SERVER_TYPE;
+
                                         }
 
 
 
-                                        try//getting windows version
+                                        try//getting windows version of remote machine
                                         {
+
+                                            // That requires WinRM to be turned on the remote machine
+                                            var options = new WSManSessionOptions();
+                                            if (usingCustomCredentials)
+                                            { // for custom credentials on windows and linux always
+                                                string domainName = System.Net.NetworkInformation.IPGlobalProperties.GetIPGlobalProperties().DomainName;
+
+                                                var creds = new CimCredential(PasswordAuthenticationMechanism.Default, domainName, credentialsUsername, credentialsPassword);
+
+                                                options = new WSManSessionOptions();
+                                                options.AddDestinationCredentials(creds);
+                                            }
+
+                                            var session = CimSession.Create(pingAddress.ToString(), options);
+
+                                            var result = session.QueryInstances(
+                                                @"root\cimv2",
+                                                "WQL",
+                                                "SELECT Caption, Version, BuildNumber, OperatingSystemSKU FROM Win32_OperatingSystem");
+
+                                            foreach (var item in result)
+                                            {
+
+                                                var caption = item.CimInstanceProperties["Caption"].Value;
+                                                var version = item.CimInstanceProperties["Version"].Value;
+                                                var build = item.CimInstanceProperties["BuildNumber"].Value;
+
+
+                                                response.operatingSystem = caption?.ToString() ?? "-";
+                                            }
+
+
+                                            /*
                                             var scope = new ManagementScope($@"\\{pingAddress}\root\cimv2");
                                             scope.Connect();
 
@@ -471,10 +572,11 @@ namespace Client
 
                                                 response.operatingSystem = isWindows11 ? "Windows 11" : "Windows 10";
                                             }
+                                            */
 
 
                                         }
-                                        catch (Exception ex)
+                                        catch (Exception)
                                         {
                                             response.operatingSystem = "-";
                                         }
@@ -567,12 +669,20 @@ namespace Client
 
 
                     }
+                    catch (UriFormatException ex)
+                    {
+                        AnsiConsole.MarkupLine($"[red]Unable to connect to server with url: [/] {url}");
+                        AnsiConsole.Markup("[grey]Press [bold]<Enter>[/][/]");
+                        Console.ReadLine();
+                        menu = MENU_CONNECT_TO_SERVER_TYPE;
+                    }
                     catch (Exception ex)
                     {
                         Console.WriteLine($"[2 Error] {ex.GetType()} {ex.Message}");
                         //Console.WriteLine($"Url: {url}");
                         AnsiConsole.Markup("[grey]Press [bold]<Enter>[/] to continue (errorrrrrr)...[/]");
                         Console.ReadLine();
+                        menu = MENU_CONNECT_TO_SERVER_TYPE;
                     }
 
 
@@ -641,6 +751,13 @@ namespace Client
             return tab;
         }
 
+        private static SecureString ToSecureString(string s = "")
+        {
+            var ss = new SecureString();
+            foreach (var c in s) ss.AppendChar(c);
+            ss.MakeReadOnly();
+            return ss;
+        }
 
 
         private static async Task sendResponseToServer(string serverIp, string serverPort, HttpClient client, List<ipResponse> ipResponses)
