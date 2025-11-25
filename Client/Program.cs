@@ -193,7 +193,10 @@ namespace Client
                     {
 
                         Console.WriteLine("Chosen JSON");
-                        var json = File.ReadAllText(fileSelection);
+                        string absolutePath=$"{currentDir}{Path.DirectorySeparatorChar}{fileSelection}"
+                        ;
+                        //Unix puts only file name (without path) in fileSelection
+                        var json = File.ReadAllText(absolutePath);
 
                         try
                         {
@@ -202,7 +205,7 @@ namespace Client
                         catch (JsonException ex)
                         {
                             menu = MENU_CLIENT_JSON;
-                            AnsiConsole.MarkupLine($"[red]Failed to read:[/] {fileSelection}");
+                            AnsiConsole.MarkupLine($"[red]Failed to read:[/] {absolutePath}");
                             AnsiConsole.MarkupLine($"[grey]{ex.Message}[/]");
                         }
 
@@ -255,7 +258,7 @@ namespace Client
                     }
                     else
                     {
-                        currentDir += $"\\{fileSelection}";
+                        currentDir += $"{Path.DirectorySeparatorChar}{fileSelection}";
                     }
 
 
@@ -355,8 +358,9 @@ namespace Client
 
                     if (!askedForCredentials)
                     {
+                        bool isRunningOnLinux = RuntimeInformation.IsOSPlatform(OSPlatform.Linux);
                         askedForCredentials = true;
-                        bool reqCustomCredentials = AnsiConsole.Prompt(
+                        bool reqCustomCredentials = isRunningOnLinux? true: AnsiConsole.Prompt(
                     new TextPrompt<bool>("Provide custom Credentials ?")
                         .AddChoice(true)
                         .AddChoice(false)
@@ -364,7 +368,7 @@ namespace Client
                         .WithConverter(choice => choice ? "y" : "n"));
 
 
-                        bool isRunningOnLinux = RuntimeInformation.IsOSPlatform(OSPlatform.Linux);
+                        
                         if ((isRunningOnLinux && !usingCustomCredentials) || reqCustomCredentials)
                         {
                             menu = MENU_INPUT_CREDENTIALS;
@@ -387,6 +391,7 @@ namespace Client
                         AnsiConsole.MarkupLine("Processing client side");
 
                         using var client = new HttpClient();
+                        var debugging=Dns.GetHostName().ToString();
                         client.DefaultRequestHeaders.Add("Client-Hostname", Dns.GetHostName().ToString());
 
 
