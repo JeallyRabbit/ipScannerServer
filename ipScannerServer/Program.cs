@@ -44,6 +44,8 @@ namespace MyApp
         public string hostname { get; set; }
         public string lastLoggedUser { get; set; }
         public string operatingSystem { get; set; }
+        public string model { get; set; }
+        public string serialNumber { get; set; }
         public DateTime lastCheckedDate { get; set; }
         public DateTime lastFoundDate { get; set; }
 
@@ -493,7 +495,9 @@ namespace MyApp
                                 last_logged_user = @LastLoggedUser, 
                                 last_checked_date = @LastCheckedDate,
                                 operating_system = @OperatingSystem,
-                                last_found_date = @LastFoundDate
+                                last_found_date = @LastFoundDate,
+                                model=@Model,
+                                serial_number=@SN
                                 WHERE ip= @Address
                                 ";
                                     var rows = await conn.QueryAsync<IP>(sqlResponse, new
@@ -503,7 +507,9 @@ namespace MyApp
                                         LastFoundDate = pc.lastFoundDate.Date,
                                         OperatingSystem = pc.operatingSystem,
                                         Address = pc.address,
-                                        LastCheckedDate = pc.lastCheckedDate
+                                        LastCheckedDate = pc.lastCheckedDate,
+                                        Model = pc.model,
+                                        SN = pc.serialNumber
                                     });
 
                                 }

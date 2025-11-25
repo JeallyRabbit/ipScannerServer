@@ -15,6 +15,18 @@ using System.Text.Json.Serialization;
 namespace Client
 {
 
+    public class UserModel
+    {
+        public string user { get; set; }
+        public string model { get; set; }
+
+        public UserModel(string user = "-", string model = "-", string name = "-")
+        {
+            this.user = user;
+            this.model = model;
+        }
+    }
+
     public class ipResponse
     {
         public string address { get; set; }
@@ -22,6 +34,9 @@ namespace Client
         public string lastLoggedUser { get; set; }
 
         public string operatingSystem { get; set; }
+        public string model { get; set; }
+        public string serialNumber { get; set; }
+
         public DateTime lastCheckedDate { get; set; }
         public DateTime lastFoundDate { get; set; }
 
@@ -45,7 +60,7 @@ namespace Client
 
         public bool isOperated { get; set; }
 
-        public IP(string address, string hostname, string lastCheckedDate)
+        public IP(string address, string hostname, string lastCheckedDate = "00.00.0001")
         {
             this.address = address;
             this.hostname = hostname;
@@ -116,13 +131,15 @@ namespace Client
             Server serverData = null;
 
             // Used to check if already started displaying data - to not start multiple workers
-            bool startedDisplaying = false;
+            // bool startedDisplaying = false;
 
             // Used for providing custom credentals to WMI
             bool usingCustomCredentials = false;
+            bool askedForCredentials = false;
             string credentialsUsername = "";
             SecureString credentialsPassword = ToSecureString();
 
+            int processedAddresses = 0;
 
             while (true)
             {
@@ -142,7 +159,7 @@ namespace Client
                     .AddChoices(new[] { "Load from .JSON", "Input manually", "Exit" }));
 
                     //resseting state of displaying live data of scanner
-                    startedDisplaying = false;
+                    //startedDisplaying = false;
 
                     if (clientConnectionChoice == "Load from .JSON")
                     {
@@ -336,8 +353,9 @@ namespace Client
                 else if (menu == MENU_PROCESS_CLIENT)
                 {
 
-                    if (!usingCustomCredentials)
+                    if (!askedForCredentials)
                     {
+                        askedForCredentials = true;
                         bool reqCustomCredentials = AnsiConsole.Prompt(
                     new TextPrompt<bool>("Provide custom Credentials ?")
                         .AddChoice(true)
@@ -373,6 +391,9 @@ namespace Client
 
 
                         List<IP> addresses = client.GetFromJsonAsync<List<IP>>(url).GetAwaiter().GetResult();
+
+                        //for testing WinRM
+                        addresses = [new IP("192.168.16.62", "", null)];
 
 
                         if (addresses is null)
@@ -413,6 +434,8 @@ namespace Client
                             {
                                 ip.isOperated = true;
 
+                                processedAddresses++;
+
                                 Ping pingSender = new Ping();
 
                                 int pingCounter = 0;
@@ -447,139 +470,21 @@ namespace Client
                                         }
 
 
-
-
-                                        try// getting current logged user on remote host
+                                        if (response.hostname != "")
                                         {
-                                            /* // Works only for client running windows
-                                            var options = usingCustomCredentials ? new ConnectionOptions
-                                            {
-                                                Username = credentialsUsername,
-                                                Password = credentialsPassword
-                                            } : new ConnectionOptions();
+
+                                            var aux = GetUserAndModel(ref menu, usingCustomCredentials, credentialsUsername, credentialsPassword, response.hostname);
+
+                                            response.lastLoggedUser = aux.user;
+                                            response.model = aux.model;
 
 
-                                            var scope = new ManagementScope($@"\\{pingAddress}\root\cimv2");
-                                            scope.Connect();
+                                            response.operatingSystem = getOSVersion(usingCustomCredentials, credentialsUsername, credentialsPassword, response.hostname);
 
-                                            var query = new ObjectQuery("SELECT UserName FROM Win32_ComputerSystem");
-                                            using var searcher = new ManagementObjectSearcher(scope, query);
-
-                                            foreach (ManagementObject mo in searcher.Get())
-                                            {
-
-                                                var aux = mo["UserName"];
-                                                response.lastLoggedUser = aux?.ToString() ?? "-";
-
-                                            }
-                                            */
-
-                                            // That requires WinRM to be turned on the remote machine
-                                            var options = new WSManSessionOptions();
-                                            if (usingCustomCredentials)
-                                            { // for custom credentials on windows and linux always
-                                                string domainName = System.Net.NetworkInformation.IPGlobalProperties.GetIPGlobalProperties().DomainName;
-
-                                                var creds = new CimCredential(PasswordAuthenticationMechanism.Default, domainName, credentialsUsername, credentialsPassword);
-
-                                                options = new WSManSessionOptions();
-                                                options.AddDestinationCredentials(creds);
-                                            }
-
-                                            var session = CimSession.Create(pingAddress.ToString(), options);
-
-                                            var result = session.QueryInstances(
-                                                @"root\cimv2",
-                                                "WQL",
-                                                "SELECT Caption FROM Win32_ComputerSystem");
-
-                                            foreach (var item in result)
-                                            {
-
-                                                var user = item.CimInstanceProperties["UserName"].Value;
-                                                response.lastLoggedUser = user?.ToString() ?? "-";
-                                            }
-
-                                        }
-                                        catch (UnauthorizedAccessException ex)
-                                        {
-                                            // Wrong credentials or insufficient permissions.
-                                            AnsiConsole.MarkupLine($"[red]Insufficient[/] permissions to get current logged user on [yellow]{pingAddress}[/]");
-                                            AnsiConsole.Markup("[grey]Press [bold]<Enter>[/] to continue...[/]");
-                                            Console.ReadLine();
-                                            AnsiConsole.Clear();
-                                            menu = MENU_CONNECT_TO_SERVER_TYPE;
-
+                                            response.serialNumber = getSN(usingCustomCredentials, credentialsUsername, credentialsPassword, response.hostname);
                                         }
 
 
-
-                                        try//getting windows version of remote machine
-                                        {
-
-                                            // That requires WinRM to be turned on the remote machine
-                                            var options = new WSManSessionOptions();
-                                            if (usingCustomCredentials)
-                                            { // for custom credentials on windows and linux always
-                                                string domainName = System.Net.NetworkInformation.IPGlobalProperties.GetIPGlobalProperties().DomainName;
-
-                                                var creds = new CimCredential(PasswordAuthenticationMechanism.Default, domainName, credentialsUsername, credentialsPassword);
-
-                                                options = new WSManSessionOptions();
-                                                options.AddDestinationCredentials(creds);
-                                            }
-
-                                            var session = CimSession.Create(pingAddress.ToString(), options);
-
-                                            var result = session.QueryInstances(
-                                                @"root\cimv2",
-                                                "WQL",
-                                                "SELECT Caption, Version, BuildNumber, OperatingSystemSKU FROM Win32_OperatingSystem");
-
-                                            foreach (var item in result)
-                                            {
-
-                                                var caption = item.CimInstanceProperties["Caption"].Value;
-                                                var version = item.CimInstanceProperties["Version"].Value;
-                                                var build = item.CimInstanceProperties["BuildNumber"].Value;
-
-
-                                                response.operatingSystem = caption?.ToString() ?? "-";
-                                            }
-
-
-                                            /*
-                                            var scope = new ManagementScope($@"\\{pingAddress}\root\cimv2");
-                                            scope.Connect();
-
-                                            // Win32_OperatingSystem instead of Win32_ComputerSystem
-                                            var query = new ObjectQuery(
-                                                "SELECT Caption, Version, BuildNumber FROM Win32_OperatingSystem");
-
-                                            using var searcher = new ManagementObjectSearcher(scope, query);
-                                            using var results = searcher.Get();
-
-                                            foreach (ManagementObject os in results)
-                                            {
-                                                var caption = (string?)os["Caption"];
-                                                var version = (string?)os["Version"];
-                                                var buildStr = (string?)os["BuildNumber"];
-
-                                                int.TryParse(buildStr, out var build);
-
-                                                // Windows 11 starts at build 22000
-                                                var isWindows11 = build >= 22000;
-
-                                                response.operatingSystem = isWindows11 ? "Windows 11" : "Windows 10";
-                                            }
-                                            */
-
-
-                                        }
-                                        catch (Exception)
-                                        {
-                                            response.operatingSystem = "-";
-                                        }
 
                                         pingSuccess = true;
                                         response.successFinding = true;
@@ -614,13 +519,13 @@ namespace Client
                                .AutoClear(true)
                                .StartAsync(async ctx =>
                                {
-                                   startedDisplaying = true;
+                                   //startedDisplaying = true;
                                    var refresh = TimeSpan.FromMilliseconds(200);
                                    int frame = 0;
                                    while (!cts.IsCancellationRequested && ipResponses.Count() != addresses.Count())
                                    {
                                        //AnsiConsole.Clear();
-                                       ctx.UpdateTarget(BuildTable(ipResponses, addresses, frame));
+                                       ctx.UpdateTarget(BuildTable(ipResponses, addresses, frame, processedAddresses));
 
 
                                        frame++;
@@ -690,20 +595,210 @@ namespace Client
             }
         }
 
+        private static UserModel GetUserAndModel(ref int menu, bool usingCustomCredentials, string credentialsUsername, SecureString credentialsPassword, string hostname)
+        {
+            UserModel mySystem = new UserModel();
+            try// getting current logged user on remote host
+            {
+                /* // Works only for client running windows
+                var options = usingCustomCredentials ? new ConnectionOptions
+                {
+                    Username = credentialsUsername,
+                    Password = credentialsPassword
+                } : new ConnectionOptions();
 
 
-        static Spectre.Console.Table BuildTable(List<ipResponse> ipResponses, List<IP> addresses = null, int counter = 0)
+                var scope = new ManagementScope($@"\\{pingAddress}\root\cimv2");
+                scope.Connect();
+
+                var query = new ObjectQuery("SELECT UserName FROM Win32_ComputerSystem");
+                using var searcher = new ManagementObjectSearcher(scope, query);
+
+                foreach (ManagementObject mo in searcher.Get())
+                {
+
+                    var aux = mo["UserName"];
+                    response.lastLoggedUser = aux?.ToString() ?? "-";
+
+                }
+                */
+
+                // That requires WinRM to be turned on the remote machine
+
+
+                var options = new WSManSessionOptions();
+                if (usingCustomCredentials)
+                { // for custom credentials on windows and linux always
+                    string domainName = System.Net.NetworkInformation.IPGlobalProperties.GetIPGlobalProperties().DomainName;
+
+                    var creds = new CimCredential(PasswordAuthenticationMechanism.Default, domainName, credentialsUsername, credentialsPassword);
+
+                    options = new WSManSessionOptions();
+                    options.AddDestinationCredentials(creds);
+                }
+
+                var session = CimSession.Create(hostname, options);
+
+                /*
+                  result = session.QueryInstances(
+                    @"root\cimv2",
+                    "WQL",
+                    "SELECT Caption FROM Win32_ComputerSystem");
+                */
+
+                var result = session.QueryInstances(
+                    @"root\cimv2",
+                    "WQL",
+                    "SELECT UserName, Model FROM Win32_ComputerSystem");
+
+
+                foreach (var item in result)
+                {
+
+                    var user = item.CimInstanceProperties["UserName"].Value;
+                    var model = item.CimInstanceProperties["Model"].Value;
+                    mySystem = new UserModel(user.ToString(), model.ToString());
+                }
+
+            }
+            catch (UnauthorizedAccessException ex)
+            {
+                // Wrong credentials or insufficient permissions.
+                AnsiConsole.MarkupLine($"[red]Insufficient[/] permissions to get current logged user on [yellow]{hostname}[/]");
+                AnsiConsole.Markup("[grey]Press [bold]<Enter>[/] to continue...[/]");
+                Console.ReadLine();
+                AnsiConsole.Clear();
+                menu = MENU_CONNECT_TO_SERVER_TYPE;
+
+            }
+            return mySystem;
+        }
+
+        private static string getSN(bool usingCustomCredentials, string credentialsUsername, SecureString credentialsPassword, string hostname)
+        {
+            try//getting windows version of remote machine
+            {
+
+                // That requires WinRM to be turned on the remote machine
+                var options = new WSManSessionOptions();
+                if (usingCustomCredentials)
+                { // for custom credentials on windows and linux always
+                    string domainName = System.Net.NetworkInformation.IPGlobalProperties.GetIPGlobalProperties().DomainName;
+
+                    var creds = new CimCredential(PasswordAuthenticationMechanism.Default, domainName, credentialsUsername, credentialsPassword);
+
+                    options = new WSManSessionOptions();
+                    options.AddDestinationCredentials(creds);
+                }
+
+                var session = CimSession.Create(hostname, options);
+
+                var result = session.QueryInstances(
+                    @"root\cimv2",
+                    "WQL",
+                    "SELECT SerialNumber FROM Win32_BIOS");
+
+                foreach (var item in result)
+                {
+                    var SerialNumber = item.CimInstanceProperties["SerialNumber"].Value;
+
+                    return SerialNumber.ToString();
+                }
+
+            }
+            catch (Exception)
+            {
+                return "-";
+            }
+
+            return "-";
+        }
+
+        private static string getOSVersion(bool usingCustomCredentials, string credentialsUsername, SecureString credentialsPassword, string hostname)
+        {
+
+            try//getting windows version of remote machine
+            {
+
+                // That requires WinRM to be turned on the remote machine
+                var options = new WSManSessionOptions();
+                if (usingCustomCredentials)
+                { // for custom credentials on windows and linux always
+                    string domainName = System.Net.NetworkInformation.IPGlobalProperties.GetIPGlobalProperties().DomainName;
+
+                    var creds = new CimCredential(PasswordAuthenticationMechanism.Default, domainName, credentialsUsername, credentialsPassword);
+
+                    options = new WSManSessionOptions();
+                    options.AddDestinationCredentials(creds);
+                }
+
+                var session = CimSession.Create(hostname, options);
+
+                var result = session.QueryInstances(
+                    @"root\cimv2",
+                    "WQL",
+                    "SELECT Caption, SerialNumber  FROM Win32_OperatingSystem");
+
+                foreach (var item in result)
+                {
+
+                    var caption = item.CimInstanceProperties["Caption"].Value;
+
+                    return caption.ToString();
+                }
+
+
+                /*
+                var scope = new ManagementScope($@"\\{pingAddress}\root\cimv2");
+                scope.Connect();
+
+                // Win32_OperatingSystem instead of Win32_ComputerSystem
+                var query = new ObjectQuery(
+                    "SELECT Caption, Version, BuildNumber FROM Win32_OperatingSystem");
+
+                using var searcher = new ManagementObjectSearcher(scope, query);
+                using var results = searcher.Get();
+
+                foreach (ManagementObject os in results)
+                {
+                    var caption = (string?)os["Caption"];
+                    var version = (string?)os["Version"];
+                    var buildStr = (string?)os["BuildNumber"];
+
+                    int.TryParse(buildStr, out var build);
+
+                    // Windows 11 starts at build 22000
+                    var isWindows11 = build >= 22000;
+
+                    response.operatingSystem = isWindows11 ? "Windows 11" : "Windows 10";
+                }
+                */
+
+
+            }
+            catch (Exception)
+            {
+                return "-";
+            }
+
+            return "-";
+        }
+
+        static Spectre.Console.Table BuildTable(List<ipResponse> ipResponses = null, List<IP> addresses = null, int counter = 0, int processedAddresses = 0)
         {
             addresses = addresses ?? new List<IP>();
+            ipResponses = ipResponses ?? new List<ipResponse>();
+
             var tab = new Spectre.Console.Table();
-            tab.Title("[bold]Live Ping[/]  (Ctrl+C to stop)");
+            tab.Title($"[bold]Live Ping[/]  (Ctrl+C to stop) - Processed {processedAddresses} addresses");
             tab.AddColumn(new TableColumn(new Markup("[green] IpAddress [/]")));
             tab.AddColumn(new TableColumn("[blue] Hostname [/]"));
-            tab.AddColumn(new TableColumn("[blue] lastLoggedUser [/]"));
-            tab.AddColumn(new TableColumn("[blue] LastCheckedDate [/]"));
-            tab.AddColumn(new TableColumn("[blue] OperatingSystem [/]"));
-            tab.AddColumn(new TableColumn("[blue] lastFoundDate [/]"));
-
+            tab.AddColumn(new TableColumn("[blue] Last logged user [/]"));
+            tab.AddColumn(new TableColumn("[blue] Last checked date [/]"));
+            tab.AddColumn(new TableColumn("[blue] Operating system [/]"));
+            tab.AddColumn(new TableColumn("[blue] Last found Date [/]"));
+            tab.AddColumn(new TableColumn("[blue] Model [/]"));
+            tab.AddColumn(new TableColumn("[blue] SerialNumber [/]"));
             int responsesAmount = ipResponses.Count();
             if (responsesAmount > 0)
             {
@@ -715,12 +810,13 @@ namespace Client
                     if (!re.successFinding)
                     {
 
-                        tab.AddRow($"[red]{re.address.ToString()}[/]", "[red] - not found -[/]", "[red] - not found -[/]", re.lastCheckedDate.ToString(), "-", re.lastFoundDate.ToString());
+                        tab.AddRow($"[red]{re.address.ToString()}[/]", "[red] - not found -[/]", "[red] - not found -[/]", re.lastCheckedDate.ToString(), "-", "-", "-", "-");
 
                     }
                     else
                     {
-                        tab.AddRow($"[green]{re.address.ToString()}[/]", re.hostname.ToString(), re.lastLoggedUser.ToString(), $"[green]{re.lastCheckedDate.ToString()}[/]", $"[green]{re.operatingSystem.ToString()}[/]", $"[green]{re.lastFoundDate.ToString()}[/]");
+                        tab.AddRow($"[green]{re.address.ToString()}[/]", re.hostname.ToString(), re.lastLoggedUser.ToString(), $"[green]{re.lastCheckedDate.ToString()}[/]",
+                            $"[green]{re.operatingSystem.ToString()}[/]", $"[green]{re.lastFoundDate.ToString()}[/]", $"[green]{re.model.ToString()}[/]", $"[green]{re.serialNumber.ToString()}[/]");
 
                     }
                 }
