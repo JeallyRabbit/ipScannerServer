@@ -193,7 +193,7 @@ namespace Client
                     {
 
                         Console.WriteLine("Chosen JSON");
-                        string absolutePath=$"{currentDir}{Path.DirectorySeparatorChar}{fileSelection}"
+                        string absolutePath = $"{currentDir}{Path.DirectorySeparatorChar}{fileSelection}"
                         ;
                         //Unix puts only file name (without path) in fileSelection
                         var json = File.ReadAllText(absolutePath);
@@ -360,7 +360,7 @@ namespace Client
                     {
                         bool isRunningOnLinux = RuntimeInformation.IsOSPlatform(OSPlatform.Linux);
                         askedForCredentials = true;
-                        bool reqCustomCredentials = isRunningOnLinux? true: AnsiConsole.Prompt(
+                        bool reqCustomCredentials = isRunningOnLinux ? true : AnsiConsole.Prompt(
                     new TextPrompt<bool>("Provide custom Credentials ?")
                         .AddChoice(true)
                         .AddChoice(false)
@@ -368,7 +368,7 @@ namespace Client
                         .WithConverter(choice => choice ? "y" : "n"));
 
 
-                        
+
                         if ((isRunningOnLinux && !usingCustomCredentials) || reqCustomCredentials)
                         {
                             menu = MENU_INPUT_CREDENTIALS;
@@ -391,9 +391,10 @@ namespace Client
                         AnsiConsole.MarkupLine("Processing client side");
 
                         using var client = new HttpClient();
-                        var debugging=Dns.GetHostName().ToString();
+                        var debugging = Dns.GetHostName().ToString();
                         client.DefaultRequestHeaders.Add("Client-Hostname", Dns.GetHostName().ToString());
 
+                        //TODO add trying with IP/hostname
 
                         List<IP> addresses = client.GetFromJsonAsync<List<IP>>(url).GetAwaiter().GetResult();
 
@@ -836,11 +837,13 @@ namespace Client
                         if (re.isOperated)
                         {
                             List<string> myFrames = new List<string> { "-", "/", "|", "\\" };
-                            tab.AddRow(re.address.ToString(), myFrames[counter], "---", re.lastCheckedDate.ToString(), "---");
+                            var auxAddress = re.address?.ToString() ?? "-";
+                            var auxCheckedDate = re.lastCheckedDate?.ToString() ?? "-";
+                            tab.AddRow(auxAddress, myFrames[counter], "---", auxCheckedDate, "---", "---", "---", "---");
                         }
                         else
                         {
-                            tab.AddRow(re.address.ToString(), "---", "---", re.lastCheckedDate.ToString(), "---");
+                            tab.AddRow(re.address.ToString(), "---", "---", re.lastCheckedDate.ToString(), "---", "---", "---", "---");
                         }
 
                     }
