@@ -2,6 +2,7 @@
 using Microsoft.EntityFrameworkCore;
 using Npgsql;
 using Spectre.Console;
+using System.Net;
 using System.Text.Json;
 using System.Text.Json.Serialization;
 
@@ -344,12 +345,17 @@ namespace MyApp
                     builder.WebHost.ConfigureKestrel(options =>
                     {
                         options.ListenAnyIP(60719);           // HTTP
-                        options.ListenAnyIP(60718, listenOpts =>
+
+                        /*options.ListenAnyIP(60718, listenOpts =>
                         {
                             listenOpts.UseHttps();            // HTTPS
-                        });
+                        });*/
                     });
+                    string hostname = Dns.GetHostName();
+                    string ip = Dns.GetHostAddresses(Dns.GetHostName())?.ToString() ?? "localhost";
+                    //builder.WebHost.UseUrls([$"https://{hostname}:60718", $"https://{ip}:60718"]);
 
+                    builder.WebHost.UseUrls(["https://*:60718", "http://*:60718"]);
 
                     bool successConnectToDataBase = true;
                     try

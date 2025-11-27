@@ -271,9 +271,8 @@ namespace Client
                     var serverName = serverNameInput != "" ? serverNameInput : "localhost";
 
                     var portInput = AnsiConsole.Prompt(
-                    new TextPrompt<string>("[[60718]] Enter port number:").AllowEmpty());
-                    string portNumber = portInput != "" ? portInput : "60718";
-
+                    new TextPrompt<string>("[[60719]] Enter port number:").AllowEmpty());
+                    string portNumber = portInput != "" ? portInput : "60719";
 
 
                     var ifSave = AnsiConsole.Prompt(
@@ -383,8 +382,10 @@ namespace Client
                     AnsiConsole.Clear();
 
 
-                    url = $"https://{serverData.getAddress()}:{serverData.getPort()}/api/pcs/oldest";
+                    url = $"http://{serverData.getAddress()}:{serverData.getPort()}/api/pcs/oldest";
 
+                    //debugging
+                    //url = $"http://{serverData.getAddress()}:60719/api/pcs/oldest";
 
                     try
                     {
@@ -461,10 +462,12 @@ namespace Client
                                     {
                                         response.successFinding = true;
                                         response.lastFoundDate = DateTime.Now;
-
+                                        IPHostEntry hostname=null;
                                         try
                                         {
-                                            IPHostEntry host = Dns.GetHostByAddress(pingAddress);
+                                            //string hostname=Dns.GetHostEntry(pingAddress)?.ToString() ?? "";
+                                            hostname=Dns.GetHostEntry(pingAddress);
+                                            IPHostEntry host = Dns.GetHostEntry(ip.address.ToString());
 
                                             response.hostname = host.HostName;
 
@@ -866,7 +869,7 @@ namespace Client
 
         private static async Task sendResponseToServer(string serverIp, string serverPort, HttpClient client, List<ipResponse> ipResponses)
         {
-            string url = $"https://{serverIp}:{serverPort}/api/pcs/response";
+            string url = $"http://{serverIp}:{serverPort}/api/pcs/response";
             HttpResponseMessage httpResponse = await client.PutAsJsonAsync(url, ipResponses);
 
             if (httpResponse.IsSuccessStatusCode)

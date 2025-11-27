@@ -13,10 +13,11 @@
             "name": ".NET Launch (WSL)",
             "type": "coreclr",
             "request": "launch",
-            //"preLaunchTask": "build",
+            "preLaunchTask": "build",
             "program": "${workspaceFolder}/bin/Debug/net9.0/Client.dll",
             "cwd": "${workspaceFolder}",
             "console": "integratedTerminal",
+            "requireExactSource": false,
             "stopAtEntry": false
         }
     ]
