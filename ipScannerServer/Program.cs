@@ -82,8 +82,8 @@ namespace MyApp
         const int MENU_DATABASE_JSON = 2;
         const int MENU_DATABASE_INPUT = 3;
         const int MENU_PROCESS_SERVER_SIDE = 4;
-        const int CLEAR_LEASE_OWNERS_INTERVAL = 10000;// 10 sec between clearing lease_owners in database
-        const int REQUEST_PACKAGE_SIZE = 20;
+        const int CLEAR_LEASE_OWNERS_INTERVAL = 60000;// 60 sec between clearing lease_owners in database
+        const int REQUEST_PACKAGE_SIZE = 5;
 
         const string SELECTION_BACK = "back";
 
@@ -218,7 +218,7 @@ namespace MyApp
                             {
                                 var passwordInput = AnsiConsole.Prompt(
                                                     new TextPrompt<string>($"[[postgres]] Enter user: [red]{obj.getUsername()}[/] password:").AllowEmpty().Secret());
-                                string password = (passwordInput != "") ? passwordInput : "";
+                                string password = (passwordInput != "") ? passwordInput : "postgres";
 
                                 connectionString = $"Host={obj.getAddress()};Port={obj.getPort()};Database={obj.getDatabaseName()};User Id={obj.getUsername()};Password={password};Ssl Mode=Disable";
                                 menu = MENU_PROCESS_SERVER_SIDE;
@@ -330,6 +330,8 @@ namespace MyApp
 
                     connectionString = $"Host={serverName};Port={portNumber};Database={dataBaseName};User Id={username};Password={password}";
 
+
+
                     menu = MENU_PROCESS_SERVER_SIDE;
 
                     //port, database name, postgre username, password
@@ -364,6 +366,7 @@ namespace MyApp
                         //testing connection
                         using var conn = new NpgsqlConnection(connectionString);
                         await conn.OpenAsync();
+                        conn.Close();
 
                     }
                     catch (System.InvalidOperationException)
@@ -401,19 +404,22 @@ namespace MyApp
                         //clearing expired lease_onwers
                         var t = Task.Run(async () =>
                         {
+                            var conn = new NpgsqlConnection(connectionString);
                             while (true)
                             {
+                                AnsiConsole.MarkupLine("[red]CLEARING LEASE OWNERS !![/]");
                                 var sql = @"
                             UPDATE devices
-                            SET lease_owner = NULL
-                            WHERE lease_end_date < CURRENT_DATE
+                            SET lease_owner = NULL,
+                            lease_end_date = NULL
+                            WHERE lease_end_date < CURRENT_TIMESTAMP
                             ";
                                 try
                                 {
-                                    await using var conn = new NpgsqlConnection(connectionString);
 
-                                    var rows = await conn.QueryAsync<IP>(sql);
+                                    var rows = await conn.QueryAsync(sql);
 
+                                    AnsiConsole.MarkupLine($"[grey]Removed {rows.Count()} lease owners.[/]");
                                     //return Results.Ok(rows);
                                 }
                                 catch (System.ArgumentNullException ex)
@@ -540,7 +546,6 @@ namespace MyApp
 
                         });
 
-                        // add auto removing lease_owner after expiration
 
 
                         var shutdown = new ManualResetEventSlim(false);

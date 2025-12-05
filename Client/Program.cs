@@ -1,6 +1,5 @@
-﻿using Microsoft.Management.Infrastructure;
-using Microsoft.Management.Infrastructure.Options;
-using Spectre.Console;
+﻿using Spectre.Console;
+using System.Management;
 using System.Net;
 using System.Net.Http.Json;
 using System.Net.NetworkInformation;
@@ -118,6 +117,8 @@ namespace Client
 
         const int PING_TIMEOUT = 1000;
 
+        const int MAX_HTTP_REQUEST_RETRY = 5;
+
         const int FRAMES = 4;
 
 
@@ -140,6 +141,7 @@ namespace Client
             SecureString credentialsPassword = ToSecureString();
 
             int processedAddresses = 0;
+            int httpRequestCounter = 0;
 
             while (true)
             {
@@ -336,7 +338,7 @@ namespace Client
                 }
                 else if (menu == MENU_INPUT_CREDENTIALS)
                 {
-                    AnsiConsole.Clear();
+                    Console.Clear();
                     AnsiConsole.MarkupLine("Enter custom credentials:");
                     usingCustomCredentials = true;
                     var usernameInput = AnsiConsole.Prompt(
@@ -359,13 +361,17 @@ namespace Client
                     {
                         bool isRunningOnLinux = RuntimeInformation.IsOSPlatform(OSPlatform.Linux);
                         askedForCredentials = true;
+
+                        bool reqCustomCredentials = true;
+
+                        /*
                         bool reqCustomCredentials = isRunningOnLinux ? true : AnsiConsole.Prompt(
                     new TextPrompt<bool>("Provide custom Credentials ?")
                         .AddChoice(true)
                         .AddChoice(false)
                         .DefaultValue(true)
                         .WithConverter(choice => choice ? "y" : "n"));
-
+                        */
 
 
                         if ((isRunningOnLinux && !usingCustomCredentials) || reqCustomCredentials)
@@ -389,7 +395,9 @@ namespace Client
 
                     try
                     {
-                        AnsiConsole.MarkupLine("Processing client side");
+                        AnsiConsole.MarkupLine("Processing client side:");
+                        //AnsiConsole.MarkupLine("[yellow]Waiting for server response[/]");
+
 
                         using var client = new HttpClient();
                         var debugging = Dns.GetHostName().ToString();
@@ -399,8 +407,7 @@ namespace Client
 
                         List<IP> addresses = client.GetFromJsonAsync<List<IP>>(url).GetAwaiter().GetResult();
 
-                        //for testing WinRM
-                        addresses = [new IP("192.168.16.62", "", null)];
+
 
 
                         if (addresses is null)
@@ -436,12 +443,12 @@ namespace Client
                             //foreach (var ip in addresses)
                             var scanTask = Parallel.ForEachAsync(
                                 addresses,
-                                new ParallelOptions { CancellationToken = cts.Token, MaxDegreeOfParallelism = 1 },
+                                new ParallelOptions { CancellationToken = cts.Token },
                                 async (ip, ct) =>
                             {
                                 ip.isOperated = true;
 
-                                processedAddresses++;
+
 
                                 Ping pingSender = new Ping();
 
@@ -462,11 +469,11 @@ namespace Client
                                     {
                                         response.successFinding = true;
                                         response.lastFoundDate = DateTime.Now;
-                                        IPHostEntry hostname=null;
+                                        IPHostEntry hostname = null;
                                         try
                                         {
                                             //string hostname=Dns.GetHostEntry(pingAddress)?.ToString() ?? "";
-                                            hostname=Dns.GetHostEntry(pingAddress);
+                                            hostname = Dns.GetHostEntry(pingAddress);
                                             IPHostEntry host = Dns.GetHostEntry(ip.address.ToString());
 
                                             response.hostname = host.HostName;
@@ -482,7 +489,7 @@ namespace Client
                                         if (response.hostname != "")
                                         {
 
-                                            var aux = GetUserAndModel(ref menu, usingCustomCredentials, credentialsUsername, credentialsPassword, response.hostname);
+                                            var aux = GetUserAndModel(ref menu, usingCustomCredentials, credentialsUsername, credentialsPassword.ToString(), response.hostname);
 
                                             response.lastLoggedUser = aux.user;
                                             response.model = aux.model;
@@ -515,27 +522,26 @@ namespace Client
                                 ip.isOperated = false;
 
 
-
+                                processedAddresses++;
                             }
                             );//for parallel
 
+                            Task displayTask = null;
 
                             //Printing progress
                             try
                             {
-
-                                AnsiConsole.Live(table)
-                               .AutoClear(true)
+                                displayTask = AnsiConsole.Live(table)
+                               .AutoClear(false)
                                .StartAsync(async ctx =>
                                {
                                    //startedDisplaying = true;
-                                   var refresh = TimeSpan.FromMilliseconds(200);
+                                   var refresh = TimeSpan.FromMilliseconds(100);
                                    int frame = 0;
                                    while (!cts.IsCancellationRequested && ipResponses.Count() != addresses.Count())
                                    {
                                        //AnsiConsole.Clear();
                                        ctx.UpdateTarget(BuildTable(ipResponses, addresses, frame, processedAddresses));
-
 
                                        frame++;
                                        if (frame >= FRAMES)
@@ -544,7 +550,7 @@ namespace Client
                                        }
                                        await Task.Delay(refresh, cts.Token).ContinueWith(_ => { });
                                    }
-                                   throw new OperationCanceledException("Cancel");
+                                   //throw new OperationCanceledException("Cancel");
                                });
 
                             }
@@ -553,7 +559,7 @@ namespace Client
                                 AnsiConsole.MarkupLine("[yellow]Stopping live view...[/]");
                                 AnsiConsole.MarkupLine("[yellow]Scan stopped[/]");
                                 AnsiConsole.Markup("[grey]Press [bold]<Enter>[/] to continue...[/]");
-                                Console.ReadLine();
+                                // Console.ReadLine();
                                 AnsiConsole.Clear();
                                 menu = MENU_CONNECT_TO_SERVER_TYPE;
                             }
@@ -561,11 +567,18 @@ namespace Client
 
 
                             await scanTask;
+                            // Console.WriteLine("Started Delay");
+                            //Console.WriteLine("Delayed");
 
                             //sending response to server
-                            sendResponseToServer(serverData.getAddress(), serverData.getPort(), client, ipResponses).Wait();
+                            await sendResponseToServer(serverData.getAddress(), serverData.getPort(), client, ipResponses);
 
+                            await displayTask;
 
+                            Console.Clear();
+                            AnsiConsole.Write(BuildTable(ipResponses, addresses, 0, processedAddresses));
+                            //await Task.Delay(2000);
+                            Thread.Sleep(3000);
 
                             if (cts.IsCancellationRequested)
                             {
@@ -576,9 +589,9 @@ namespace Client
                                 break;
                             }
 
-
+                            //Thread.Sleep(4000);
                             //stoping displaying table
-                            cts.Cancel();
+                            //cts.Cancel();
                         }
 
 
@@ -590,13 +603,30 @@ namespace Client
                         Console.ReadLine();
                         menu = MENU_CONNECT_TO_SERVER_TYPE;
                     }
+                    catch (HttpRequestException ex)
+                    {
+                        AnsiConsole.Clear();
+
+                        if (httpRequestCounter > MAX_HTTP_REQUEST_RETRY)
+                        {
+                            httpRequestCounter = 0;
+                            Console.WriteLine($"[red][Error][/] {ex.GetType()} {ex.Message}");
+                            Thread.Sleep(1000);
+                            AnsiConsole.Markup("[grey]Press [bold]<Enter>[/] to continue (errorrrrrr)...[/]");
+                            Console.ReadLine();
+                            menu = MENU_CONNECT_TO_SERVER_TYPE;
+                        }
+                        httpRequestCounter++;
+
+
+                    }
                     catch (Exception ex)
                     {
-                        Console.WriteLine($"[2 Error] {ex.GetType()} {ex.Message}");
+                        // Console.WriteLine($"[2 Error] {ex.GetType()} {ex.Message}");
                         //Console.WriteLine($"Url: {url}");
-                        AnsiConsole.Markup("[grey]Press [bold]<Enter>[/] to continue (errorrrrrr)...[/]");
-                        Console.ReadLine();
-                        menu = MENU_CONNECT_TO_SERVER_TYPE;
+                        //AnsiConsole.Markup("[grey]Press [bold]<Enter>[/] to continue (errorrrrrr)...[/]");
+                        // Console.ReadLine();
+                        // menu = MENU_CONNECT_TO_SERVER_TYPE;
                     }
 
 
@@ -604,37 +634,39 @@ namespace Client
             }
         }
 
-        private static UserModel GetUserAndModel(ref int menu, bool usingCustomCredentials, string credentialsUsername, SecureString credentialsPassword, string hostname)
+        private static UserModel GetUserAndModel(ref int menu, bool usingCustomCredentials, string credentialsUsername, string credentialsPassword, string hostname)
         {
             UserModel mySystem = new UserModel();
             try// getting current logged user on remote host
             {
-                /* // Works only for client running windows
+                // Works only for client running windows
                 var options = usingCustomCredentials ? new ConnectionOptions
                 {
                     Username = credentialsUsername,
-                    Password = credentialsPassword
+                    Password = credentialsPassword,
+                    Timeout = new TimeSpan(0, 0, 5)
                 } : new ConnectionOptions();
 
 
-                var scope = new ManagementScope($@"\\{pingAddress}\root\cimv2");
+                var scope = new ManagementScope($@"\\{hostname}\root\cimv2", options);
                 scope.Connect();
 
-                var query = new ObjectQuery("SELECT UserName FROM Win32_ComputerSystem");
+                var query = new ObjectQuery("SELECT UserName,Model FROM Win32_ComputerSystem");
                 using var searcher = new ManagementObjectSearcher(scope, query);
 
                 foreach (ManagementObject mo in searcher.Get())
                 {
 
                     var aux = mo["UserName"];
-                    response.lastLoggedUser = aux?.ToString() ?? "-";
-
+                    mySystem.user = aux?.ToString() ?? "-";
+                    aux = mo["Model"];
+                    mySystem.model = aux?.ToString() ?? "-";
                 }
-                */
+
 
                 // That requires WinRM to be turned on the remote machine
 
-
+                /*
                 var options = new WSManSessionOptions();
                 if (usingCustomCredentials)
                 { // for custom credentials on windows and linux always
@@ -648,12 +680,7 @@ namespace Client
 
                 var session = CimSession.Create(hostname, options);
 
-                /*
-                  result = session.QueryInstances(
-                    @"root\cimv2",
-                    "WQL",
-                    "SELECT Caption FROM Win32_ComputerSystem");
-                */
+                
 
                 var result = session.QueryInstances(
                     @"root\cimv2",
@@ -668,17 +695,24 @@ namespace Client
                     var model = item.CimInstanceProperties["Model"].Value;
                     mySystem = new UserModel(user.ToString(), model.ToString());
                 }
+                */
+
+
 
             }
             catch (UnauthorizedAccessException ex)
             {
                 // Wrong credentials or insufficient permissions.
-                AnsiConsole.MarkupLine($"[red]Insufficient[/] permissions to get current logged user on [yellow]{hostname}[/]");
-                AnsiConsole.Markup("[grey]Press [bold]<Enter>[/] to continue...[/]");
-                Console.ReadLine();
-                AnsiConsole.Clear();
-                menu = MENU_CONNECT_TO_SERVER_TYPE;
+                //AnsiConsole.MarkupLine($"[red]Insufficient[/] permissions to get current logged user on [yellow]{hostname}[/]");
+                //AnsiConsole.Markup("[grey]Press [bold]<Enter>[/] to continue...[/]");
+                //Console.ReadLine();
+                //AnsiConsole.Clear();
+                //menu = MENU_CONNECT_TO_SERVER_TYPE;
 
+            }
+            catch (Exception ex)
+            {
+                return mySystem;
             }
             return mySystem;
         }
@@ -688,6 +722,35 @@ namespace Client
             try//getting windows version of remote machine
             {
 
+                // Works only for client running windows
+                var options = usingCustomCredentials ? new ConnectionOptions
+                {
+                    Username = credentialsUsername,
+                    Password = credentialsPassword.ToString(),
+                    Timeout = new TimeSpan(0, 0, 5)
+                } : new ConnectionOptions();
+
+                var scope = new ManagementScope($@"\\{hostname}\root\cimv2", options);
+
+
+                scope.Connect();
+
+                // Win32_OperatingSystem instead of Win32_ComputerSystem
+                var query = new ObjectQuery(
+                    "SELECT  SerialNumber FROM Win32_BIOS");
+
+                using var searcher = new ManagementObjectSearcher(scope, query);
+                using var results = searcher.Get();
+
+                foreach (ManagementObject os in results)
+                {
+                    var sn = (string?)os["SerialNumber"];
+
+                    return sn;
+                }
+
+
+                /*
                 // That requires WinRM to be turned on the remote machine
                 var options = new WSManSessionOptions();
                 if (usingCustomCredentials)
@@ -713,6 +776,7 @@ namespace Client
 
                     return SerialNumber.ToString();
                 }
+                */
 
             }
             catch (Exception)
@@ -729,6 +793,7 @@ namespace Client
             try//getting windows version of remote machine
             {
 
+                /*
                 // That requires WinRM to be turned on the remote machine
                 var options = new WSManSessionOptions();
                 if (usingCustomCredentials)
@@ -742,7 +807,7 @@ namespace Client
                 }
 
                 var session = CimSession.Create(hostname, options);
-
+                
                 var result = session.QueryInstances(
                     @"root\cimv2",
                     "WQL",
@@ -755,10 +820,17 @@ namespace Client
 
                     return caption.ToString();
                 }
+                */
 
+                // Works only for client running windows
+                var options = usingCustomCredentials ? new ConnectionOptions
+                {
+                    Username = credentialsUsername,
+                    Password = credentialsPassword.ToString(),
+                    Timeout = new TimeSpan(0, 0, 5)
+                } : new ConnectionOptions();
 
-                /*
-                var scope = new ManagementScope($@"\\{pingAddress}\root\cimv2");
+                var scope = new ManagementScope($@"\\{hostname}\root\cimv2", options);
                 scope.Connect();
 
                 // Win32_OperatingSystem instead of Win32_ComputerSystem
@@ -779,9 +851,10 @@ namespace Client
                     // Windows 11 starts at build 22000
                     var isWindows11 = build >= 22000;
 
-                    response.operatingSystem = isWindows11 ? "Windows 11" : "Windows 10";
+                    var operatingSystem = isWindows11 ? "Windows 11" : "Windows 10";
+                    return operatingSystem;
                 }
-                */
+
 
 
             }
@@ -824,37 +897,56 @@ namespace Client
                     }
                     else
                     {
-                        tab.AddRow($"[green]{re.address.ToString()}[/]", re.hostname.ToString(), re.lastLoggedUser.ToString(), $"[green]{re.lastCheckedDate.ToString()}[/]",
-                            $"[green]{re.operatingSystem.ToString()}[/]", $"[green]{re.lastFoundDate.ToString()}[/]", $"[green]{re.model.ToString()}[/]", $"[green]{re.serialNumber.ToString()}[/]");
+                        try
+                        {
+
+                            string tabAddress = re.address?.ToString() ?? "-";
+                            string tabHostname = re.hostname?.ToString() ?? "-";
+                            string tabLastLoggedUser = re.lastLoggedUser?.ToString() ?? "-";
+                            //string tabLastCheckedDate = re.lastCheckedDate?.ToString() ?? "-";
+                            string tabOperatingSystem = re.operatingSystem?.ToString() ?? "-";
+                            //string tabLastFoundDate = re.lastFoundDate?.ToString() ?? "-";
+                            string tabModel = re.model?.ToString() ?? "-";
+                            string tabSN = re.serialNumber?.ToString() ?? "-";
+                            tab.AddRow($"[green]{tabAddress}[/]", tabHostname, tabLastLoggedUser, $"[green]{re.lastCheckedDate.ToString()}[/]",
+                            $"[green]{tabOperatingSystem}[/]", $"[green]{re.lastFoundDate.ToString()}[/]", $"[green]{tabModel}[/]", $"[green]{tabSN}[/]");
+
+
+                        }
+                        catch (Exception ex)
+                        {
+                            tab.AddEmptyRow();
+                        }
 
                     }
                 }
-            }
 
-            if (addresses.Count() > 0)
-            {
-                foreach (var re in addresses)
+                if (addresses.Count() > 0)
                 {
-                    if (!(ipResponses.Any(x => x.address == re.address)))
+                    foreach (var re in addresses)
                     {
-                        if (re.isOperated)
+                        if (!(ipResponses.Any(x => x.address == re.address)))
                         {
-                            List<string> myFrames = new List<string> { "-", "/", "|", "\\" };
-                            var auxAddress = re.address?.ToString() ?? "-";
-                            var auxCheckedDate = re.lastCheckedDate?.ToString() ?? "-";
-                            tab.AddRow(auxAddress, myFrames[counter], "---", auxCheckedDate, "---", "---", "---", "---");
-                        }
-                        else
-                        {
-                            tab.AddRow(re.address.ToString(), "---", "---", re.lastCheckedDate.ToString(), "---", "---", "---", "---");
+                            if (re.isOperated)
+                            {
+                                List<string> myFrames = new List<string> { "-", "/", "|", "\\" };
+                                var auxAddress = re.address?.ToString() ?? "-";
+                                var auxCheckedDate = re.lastCheckedDate?.ToString() ?? "-";
+                                tab.AddRow(auxAddress, myFrames[counter], "---", auxCheckedDate, "---", "---", "---", "---");
+                            }
+                            else
+                            {
+                                tab.AddRow(re.address.ToString(), "---", "---", re.lastCheckedDate.ToString(), "---", "---", "---", "---");
+                            }
+
                         }
 
                     }
-
                 }
-            }
 
-            tab.Collapse();
+                tab.Collapse();
+
+            }
             return tab;
         }
 
@@ -869,6 +961,8 @@ namespace Client
 
         private static async Task sendResponseToServer(string serverIp, string serverPort, HttpClient client, List<ipResponse> ipResponses)
         {
+            //Console.Clear();
+            Console.WriteLine("Sending response to server");
             string url = $"http://{serverIp}:{serverPort}/api/pcs/response";
             HttpResponseMessage httpResponse = await client.PutAsJsonAsync(url, ipResponses);
 
@@ -882,6 +976,7 @@ namespace Client
             {
                 //Console.WriteLine($"❌ Error: {httpResponse.StatusCode}");
             }
+            Console.WriteLine("Finished sending");
         }
 
         private static string fileSelection(string currentDir, int height)
