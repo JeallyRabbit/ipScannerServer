@@ -17,6 +17,7 @@
     <PackageReference Include="Microsoft.PowerShell.Commands.Utility" Version="7.5.4" />
     <PackageReference Include="Microsoft.PowerShell.ConsoleHost" Version="7.5.3" />
     <PackageReference Include="Microsoft.WSMan.Management" Version="7.5.4" />
+    <PackageReference Include="SnmpSharpNet" Version="0.9.7" />
     <PackageReference Include="Spectre.Console" Version="0.53.0" />
     <PackageReference Include="Spectre.Console.Json" Version="0.53.0" />
     <PackageReference Include="System.Diagnostics.PerformanceCounter" Version="9.0.10" />

@@ -1,4 +1,5 @@
-﻿using Spectre.Console;
+﻿using SnmpSharpNet;
+using Spectre.Console;
 using System.Management;
 using System.Net;
 using System.Net.Http.Json;
@@ -59,7 +60,7 @@ namespace Client
 
         public bool isOperated { get; set; }
 
-        public IP(string address, string hostname, string lastCheckedDate = "00.00.0001")
+        public IP(string address = "127.0.01", string hostname = "", string lastCheckedDate = "00.00.0001")
         {
             this.address = address;
             this.hostname = hostname;
@@ -362,7 +363,7 @@ namespace Client
                         bool isRunningOnLinux = RuntimeInformation.IsOSPlatform(OSPlatform.Linux);
                         askedForCredentials = true;
 
-                        bool reqCustomCredentials = true;
+                        bool reqCustomCredentials = false;
 
                         /*
                         bool reqCustomCredentials = isRunningOnLinux ? true : AnsiConsole.Prompt(
@@ -403,10 +404,14 @@ namespace Client
                         var debugging = Dns.GetHostName().ToString();
                         client.DefaultRequestHeaders.Add("Client-Hostname", Dns.GetHostName().ToString());
 
-                        //TODO add trying with IP/hostname
+
 
                         List<IP> addresses = client.GetFromJsonAsync<List<IP>>(url).GetAwaiter().GetResult();
 
+                        //Testing printers
+                        addresses = new List<IP>();
+
+                        addresses.Add(new IP("192.168.4.40"));
 
 
 
@@ -464,48 +469,74 @@ namespace Client
                                 while (pingCounter < MAX_PING_COUNTER)
                                 {
 
-                                    PingReply reply = pingSender.Send(pingAddress, PING_TIMEOUT);
-                                    if (reply.Status == IPStatus.Success)
+                                    try
                                     {
-                                        response.successFinding = true;
-                                        response.lastFoundDate = DateTime.Now;
-                                        IPHostEntry hostname = null;
-                                        try
+                                        PingReply reply = pingSender.Send(pingAddress, PING_TIMEOUT);
+                                        if (reply.Status == IPStatus.Success)
                                         {
-                                            //string hostname=Dns.GetHostEntry(pingAddress)?.ToString() ?? "";
-                                            hostname = Dns.GetHostEntry(pingAddress);
-                                            IPHostEntry host = Dns.GetHostEntry(ip.address.ToString());
+                                            response.successFinding = true;
+                                            response.lastFoundDate = DateTime.Now;
+                                            IPHostEntry hostname = null;
+                                            try
+                                            {
+                                                //string hostname=Dns.GetHostEntry(pingAddress)?.ToString() ?? "";
+                                                hostname = Dns.GetHostEntry(pingAddress);
+                                                IPHostEntry host = Dns.GetHostEntry(ip.address.ToString());
 
-                                            response.hostname = host.HostName;
+                                                response.hostname = host.HostName;
 
+                                            }
+                                            catch (SocketException ex)
+                                            {
+                                                response.hostname = "";
+
+                                            }
+
+
+                                            if (response.hostname != "")
+                                            {
+
+                                                var aux = GetUserAndModel(ref menu, usingCustomCredentials, credentialsUsername, credentialsPassword.ToString(), response.hostname);
+
+                                                response.lastLoggedUser = aux.user;
+                                                response.model = aux.model;
+
+
+                                                response.operatingSystem = getOSVersion(response.hostname, usingCustomCredentials, credentialsUsername, credentialsPassword);
+
+                                                response.serialNumber = getSN(response.hostname, usingCustomCredentials, credentialsUsername, credentialsPassword);
+
+                                                if (response.lastLoggedUser == "-" && response.model == "-" && response.operatingSystem == "-" && response.serialNumber == "-")
+                                                {
+                                                    response.model = GetPrinterModel(ip.address.ToString());
+                                                    response.serialNumber = GetPrinterSN(ip.address.ToString());
+                                                }
+                                            }
+                                            else
+                                            {
+                                                response.lastLoggedUser = "-";
+
+                                                response.model = GetPrinterModel(ip.address.ToString());
+                                                response.serialNumber = GetPrinterSN(ip.address.ToString());
+
+                                                response.operatingSystem = "-";
+                                                response.serialNumber = "-";
+
+                                            }
+
+
+                                            pingSuccess = true;
+                                            response.successFinding = true;
+                                            break;
                                         }
-                                        catch (SocketException ex)
-                                        {
-                                            response.hostname = "";
-
-                                        }
-
-
-                                        if (response.hostname != "")
-                                        {
-
-                                            var aux = GetUserAndModel(ref menu, usingCustomCredentials, credentialsUsername, credentialsPassword.ToString(), response.hostname);
-
-                                            response.lastLoggedUser = aux.user;
-                                            response.model = aux.model;
-
-
-                                            response.operatingSystem = getOSVersion(usingCustomCredentials, credentialsUsername, credentialsPassword, response.hostname);
-
-                                            response.serialNumber = getSN(usingCustomCredentials, credentialsUsername, credentialsPassword, response.hostname);
-                                        }
-
-
-
-                                        pingSuccess = true;
-                                        response.successFinding = true;
-                                        break;
                                     }
+                                    catch (PingException ex)
+                                    {
+                                        response.operatingSystem = "-";
+
+                                        response.serialNumber = "-";
+                                    }
+
                                     pingCounter++;
 
 
@@ -717,7 +748,7 @@ namespace Client
             return mySystem;
         }
 
-        private static string getSN(bool usingCustomCredentials, string credentialsUsername, SecureString credentialsPassword, string hostname)
+        private static string getSN(string hostname = "", bool usingCustomCredentials = false, string credentialsUsername = "", SecureString credentialsPassword = null)
         {
             try//getting windows version of remote machine
             {
@@ -787,7 +818,7 @@ namespace Client
             return "-";
         }
 
-        private static string getOSVersion(bool usingCustomCredentials, string credentialsUsername, SecureString credentialsPassword, string hostname)
+        private static string getOSVersion(string hostname, bool usingCustomCredentials = false, string credentialsUsername = "", SecureString credentialsPassword = null)
         {
 
             try//getting windows version of remote machine
@@ -866,6 +897,84 @@ namespace Client
             return "-";
         }
 
+        private static string GetPrinterSN(string ip = "127.0.0.1", SnmpVersion version = SnmpVersion.Ver1)
+        {
+            // SNMP community string (default = "public")
+            OctetString community = new OctetString("public");
+            AgentParameters param = new AgentParameters(community);
+            param.Version = version;
+
+            // The printer IP
+            IPAddress address = IPAddress.Parse(ip);
+
+            UdpTarget target = new UdpTarget(address, 161, 2000, 1);
+
+            // Standard sysDescr OID
+            //Oid oid = new Oid("1.3.6.1.2.1.1.1.0");
+            SnmpSharpNet.Oid oidSerialNumber = new SnmpSharpNet.Oid("1.3.6.1.2.1.43.5.1.1.17.1");
+
+            Pdu pdu = new Pdu(PduType.Get);
+            pdu.VbList.Add(oidSerialNumber);
+            try
+            {
+                //SnmpV2Packet result = (SnmpV2Packet)target.Request(pdu, param);
+                SnmpPacket result = (SnmpPacket)target.Request(pdu, param);
+
+                if (result != null && result.Pdu.ErrorStatus == 0)
+                {
+                    return result.Pdu.VbList[0].Value.ToString();
+                }
+
+            }
+            catch (Exception ex)
+            {
+                return "-";
+            }
+
+            return "-";
+
+        }
+
+        private static string GetPrinterModel(string ip = "127.0.0.1", SnmpVersion version = SnmpVersion.Ver1)
+        {
+
+            // SNMP community string (default = "public")
+            OctetString community = new OctetString("public");
+            AgentParameters param = new AgentParameters(community);
+            param.Version = version;
+
+            // The printer IP
+            IPAddress address = IPAddress.Parse(ip);
+
+            UdpTarget target = new UdpTarget(address, 161, 2000, 1);
+
+            // Standard sysDescr OID
+            //Oid oid = new Oid("1.3.6.1.2.1.1.1.0");
+            SnmpSharpNet.Oid oidModel = new SnmpSharpNet.Oid("1.3.6.1.2.1.43.5.1.1.16.1");
+
+
+            Pdu pdu = new Pdu(PduType.Get);
+            pdu.VbList.Add(oidModel);
+            try
+            {
+                //SnmpV2Packet result = (SnmpV2Packet)target.Request(pdu, param);
+                SnmpPacket result = (SnmpPacket)target.Request(pdu, param);
+
+                if (result != null && result.Pdu.ErrorStatus == 0)
+                {
+                    return result.Pdu.VbList[0].Value.ToString();
+                }
+
+            }
+            catch (Exception ex)
+            {
+                return "-";
+            }
+
+
+            return "-";
+        }
+
         static Spectre.Console.Table BuildTable(List<ipResponse> ipResponses = null, List<IP> addresses = null, int counter = 0, int processedAddresses = 0)
         {
             addresses = addresses ?? new List<IP>();
@@ -932,11 +1041,11 @@ namespace Client
                                 List<string> myFrames = new List<string> { "-", "/", "|", "\\" };
                                 var auxAddress = re.address?.ToString() ?? "-";
                                 var auxCheckedDate = re.lastCheckedDate?.ToString() ?? "-";
-                                tab.AddRow(auxAddress, myFrames[counter], "---", auxCheckedDate, "---", "---", "---", "---");
+                                tab.AddRow(auxAddress, myFrames[counter], "---", auxCheckedDate.Replace('/', '.'), "---", "---", "---", "---");
                             }
                             else
                             {
-                                tab.AddRow(re.address.ToString(), "---", "---", re.lastCheckedDate.ToString(), "---", "---", "---", "---");
+                                tab.AddRow(re.address.ToString(), "---", "---", re.lastCheckedDate.ToString().Replace('/', '.'), "---", "---", "---", "---");
                             }
 
                         }
