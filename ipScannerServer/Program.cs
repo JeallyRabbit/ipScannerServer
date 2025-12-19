@@ -82,8 +82,8 @@ namespace MyApp
         const int MENU_DATABASE_JSON = 2;
         const int MENU_DATABASE_INPUT = 3;
         const int MENU_PROCESS_SERVER_SIDE = 4;
-        const int CLEAR_LEASE_OWNERS_INTERVAL = 60000;// 60 sec between clearing lease_owners in database
-        const int REQUEST_PACKAGE_SIZE = 10;
+        const int CLEAR_LEASE_OWNERS_INTERVAL = 600000;// 60 sec between clearing lease_owners in database
+        const int REQUEST_PACKAGE_SIZE = 30;
 
         const string SELECTION_BACK = "back";
 
@@ -401,7 +401,12 @@ namespace MyApp
                     if (successConnectToDataBase)
                     {
 
+                        var app = builder.Build();
+
+
                         //clearing expired lease_onwers
+                        //clearLeaseOwners(connectionString);
+                        /*
                         var t = Task.Run(async () =>
                         {
                             var conn = new NpgsqlConnection(connectionString);
@@ -432,9 +437,13 @@ namespace MyApp
                                 await Task.Delay(CLEAR_LEASE_OWNERS_INTERVAL);
                             }
                         });
+                        */
 
 
-                        var app = builder.Build();
+
+                        ////////////////////////////
+
+
 
                         // GET /api/pcs/oldest  →  returns 10 PCs with oldest last_checked_date
                         app.MapGet("/api/pcs/oldest", async (HttpContext context) =>
@@ -572,6 +581,36 @@ namespace MyApp
 
 
 
+        private static async Task clearLeaseOwners(string connectionString = "")
+        {
+            var conn = new NpgsqlConnection(connectionString);
+            while (true)
+            {
+                AnsiConsole.MarkupLine("[red]CLEARING LEASE OWNERS !![/]");
+                var sql = @"
+                            UPDATE devices
+                            SET lease_owner = NULL,
+                            lease_end_date = NULL
+                            WHERE lease_end_date < CURRENT_TIMESTAMP
+                            ";
+                try
+                {
+
+                    var rows = await conn.QueryAsync(sql);
+
+                    AnsiConsole.MarkupLine($"[grey]Removed {rows.Count()} lease owners.[/]");
+                    //return Results.Ok(rows);
+                }
+                catch (System.ArgumentNullException ex)
+                {
+                    Console.WriteLine(ex);
+                    //return Results.NotFound();
+                }
+
+
+                await Task.Delay(CLEAR_LEASE_OWNERS_INTERVAL);
+            }
+        }
 
 
 

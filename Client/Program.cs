@@ -482,111 +482,111 @@ namespace Client
                                 addresses,
                                 new ParallelOptions { CancellationToken = cts.Token, MaxDegreeOfParallelism = 2 },
                                 async (ip, ct) =>
-                            {
-                                ip.isOperated = true;
-
-
-
-                                Ping pingSender = new Ping();
-
-                                int pingCounter = 0;
-                                string data = "aa";
-                                byte[] buffer = Encoding.ASCII.GetBytes(data);
-
-                                ipResponse response = new ipResponse(ip.address.ToString(), DateTime.Now);
-                                bool pingSuccess = false;
-
-                                IPAddress pingAddress = IPAddress.Parse(ip.address.ToString());
-
-                                while (pingCounter < MAX_PING_COUNTER)
                                 {
+                                    ip.isOperated = true;
 
-                                    try
+
+
+                                    Ping pingSender = new Ping();
+
+                                    int pingCounter = 0;
+                                    string data = "aa";
+                                    byte[] buffer = Encoding.ASCII.GetBytes(data);
+
+                                    ipResponse response = new ipResponse(ip.address.ToString(), DateTime.Now);
+                                    bool pingSuccess = false;
+
+                                    IPAddress pingAddress = IPAddress.Parse(ip.address.ToString());
+
+                                    while (pingCounter < MAX_PING_COUNTER)
                                     {
-                                        PingReply reply = pingSender.Send(pingAddress, PING_TIMEOUT);
-                                        if (reply.Status == IPStatus.Success)
+
+                                        try
                                         {
-                                            response.successFinding = true;
-                                            response.lastFoundDate = DateTime.Now;
-                                            IPHostEntry hostname = null;
-                                            try
+                                            PingReply reply = pingSender.Send(pingAddress, PING_TIMEOUT);
+                                            if (reply.Status == IPStatus.Success)
                                             {
-                                                //string hostname=Dns.GetHostEntry(pingAddress)?.ToString() ?? "";
-                                                hostname = Dns.GetHostEntry(pingAddress);
-                                                IPHostEntry host = Dns.GetHostEntry(ip.address.ToString());
-
-                                                response.hostname = host.HostName;
-
-                                            }
-                                            catch (SocketException ex)
-                                            {
-                                                response.hostname = "";
-
-                                            }
-
-
-                                            if (response.hostname != "")
-                                            {
-
-                                                var aux = GetUserAndModel(ref menu, usingCustomCredentials, credentialsUsername, credentialsPassword.ToString(), response.hostname);
-
-                                                response.lastLoggedUser = aux.user;
-                                                response.model = aux.model;
-
-
-                                                response.operatingSystem = getOSVersion(response.hostname, usingCustomCredentials, credentialsUsername, credentialsPassword);
-
-                                                response.serialNumber = getSN(response.hostname, usingCustomCredentials, credentialsUsername, credentialsPassword);
-
-                                                if (response.lastLoggedUser == "-" && response.model == "-" && response.operatingSystem == "-" && response.serialNumber == "-")
+                                                response.successFinding = true;
+                                                response.lastFoundDate = DateTime.Now;
+                                                IPHostEntry hostname = null;
+                                                try
                                                 {
+                                                    //string hostname=Dns.GetHostEntry(pingAddress)?.ToString() ?? "";
+                                                    hostname = Dns.GetHostEntry(pingAddress);
+                                                    IPHostEntry host = Dns.GetHostEntry(ip.address.ToString());
+
+                                                    response.hostname = host.HostName;
+
+                                                }
+                                                catch (SocketException ex)
+                                                {
+                                                    response.hostname = "";
+
+                                                }
+
+
+                                                if (response.hostname != "")
+                                                {
+
+                                                    var aux = GetUserAndModel(ref menu, usingCustomCredentials, credentialsUsername, credentialsPassword.ToString(), response.hostname);
+
+                                                    response.lastLoggedUser = aux.user;
+                                                    response.model = aux.model;
+
+
+                                                    response.operatingSystem = getOSVersion(response.hostname, usingCustomCredentials, credentialsUsername, credentialsPassword);
+
+                                                    response.serialNumber = getSN(response.hostname, usingCustomCredentials, credentialsUsername, credentialsPassword);
+
+                                                    if (response.lastLoggedUser == "-" && response.model == "-" && response.operatingSystem == "-" && response.serialNumber == "-")
+                                                    {
+                                                        response.model = GetPrinterModel(ip.address.ToString());
+                                                        response.serialNumber = GetPrinterSN(ip.address.ToString());
+                                                    }
+                                                }
+                                                else
+                                                {
+                                                    response.lastLoggedUser = "-";
+
                                                     response.model = GetPrinterModel(ip.address.ToString());
                                                     response.serialNumber = GetPrinterSN(ip.address.ToString());
+
+                                                    response.operatingSystem = "-";
+                                                    response.serialNumber = "-";
+
                                                 }
+
+
+                                                pingSuccess = true;
+                                                response.successFinding = true;
+                                                break;
                                             }
-                                            else
-                                            {
-                                                response.lastLoggedUser = "-";
-
-                                                response.model = GetPrinterModel(ip.address.ToString());
-                                                response.serialNumber = GetPrinterSN(ip.address.ToString());
-
-                                                response.operatingSystem = "-";
-                                                response.serialNumber = "-";
-
-                                            }
-
-
-                                            pingSuccess = true;
-                                            response.successFinding = true;
-                                            break;
                                         }
+                                        catch (PingException ex)
+                                        {
+                                            response.operatingSystem = "-";
+
+                                            response.serialNumber = "-";
+                                        }
+
+                                        pingCounter++;
+
+
+
+
                                     }
-                                    catch (PingException ex)
+
+                                    if (pingSuccess == false)
                                     {
-                                        response.operatingSystem = "-";
-
-                                        response.serialNumber = "-";
+                                        response.successFinding = false;
                                     }
 
-                                    pingCounter++;
+                                    ipResponses.Add(response);
+                                    ip.isOperated = false;
 
 
-
-
+                                    processedAddresses++;
                                 }
-
-                                if (pingSuccess == false)
-                                {
-                                    response.successFinding = false;
-                                }
-
-                                ipResponses.Add(response);
-                                ip.isOperated = false;
-
-
-                                processedAddresses++;
-                            }
                             );//for parallel
 
 
