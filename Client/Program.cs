@@ -118,7 +118,7 @@ namespace Client
 
         const int PING_TIMEOUT = 1000;
 
-        const int MAX_HTTP_REQUEST_RETRY = 5;
+        const int MAX_HTTP_REQUEST_RETRY = 10;
 
         const int FRAMES = 4;
 
@@ -391,8 +391,6 @@ namespace Client
 
                     url = $"http://{serverData.getAddress()}:{serverData.getPort()}/api/pcs/oldest";
 
-                    //debugging
-                    //url = $"http://{serverData.getAddress()}:60719/api/pcs/oldest";
 
                     try
                     {
@@ -401,17 +399,11 @@ namespace Client
 
 
                         using var client = new HttpClient();
-                        var debugging = Dns.GetHostName().ToString();
                         client.DefaultRequestHeaders.Add("Client-Hostname", Dns.GetHostName().ToString());
 
 
 
                         List<IP> addresses = client.GetFromJsonAsync<List<IP>>(url).GetAwaiter().GetResult();
-
-                        //Testing printers
-                        addresses = new List<IP>();
-
-                        addresses.Add(new IP("192.168.4.40"));
 
 
 
@@ -445,10 +437,50 @@ namespace Client
 
                             var table = new Spectre.Console.Table();
 
+                            Task displayTask = null;
+
+                            //Printing progress
+                            try
+                            {
+                                displayTask = AnsiConsole.Live(table)
+                                   .AutoClear(false)
+                                   .StartAsync(async ctx =>
+                                   {
+                                       //startedDisplaying = true;
+                                       var refresh = TimeSpan.FromMilliseconds(100);
+                                       int frame = 0;
+                                       while (!cts.IsCancellationRequested && ipResponses.Count() != addresses.Count())
+                                       {
+                                           //AnsiConsole.Clear();
+                                           ctx.UpdateTarget(BuildTable(ipResponses, addresses, frame, processedAddresses));
+
+                                           frame++;
+                                           if (frame >= FRAMES)
+                                           {
+                                               frame = 0;
+                                           }
+                                           await Task.Delay(refresh, cts.Token);//.ContinueWith(_ => { return; });
+                                       }
+                                       //throw new OperationCanceledException("Cancel");
+                                   });
+
+                            }
+                            catch (OperationCanceledException ex)
+                            {
+                                AnsiConsole.MarkupLine("[yellow]Stopping live view...[/]");
+                                AnsiConsole.MarkupLine("[yellow]Scan stopped[/]");
+                                AnsiConsole.Markup("[grey]Press [bold]<Enter>[/] to continue...[/]");
+                                // Console.ReadLine();
+                                AnsiConsole.Clear();
+                                menu = MENU_CONNECT_TO_SERVER_TYPE;
+                            }
+
+
+
                             //foreach (var ip in addresses)
                             var scanTask = Parallel.ForEachAsync(
                                 addresses,
-                                new ParallelOptions { CancellationToken = cts.Token },
+                                new ParallelOptions { CancellationToken = cts.Token, MaxDegreeOfParallelism = 2 },
                                 async (ip, ct) =>
                             {
                                 ip.isOperated = true;
@@ -557,43 +589,7 @@ namespace Client
                             }
                             );//for parallel
 
-                            Task displayTask = null;
 
-                            //Printing progress
-                            try
-                            {
-                                displayTask = AnsiConsole.Live(table)
-                               .AutoClear(false)
-                               .StartAsync(async ctx =>
-                               {
-                                   //startedDisplaying = true;
-                                   var refresh = TimeSpan.FromMilliseconds(100);
-                                   int frame = 0;
-                                   while (!cts.IsCancellationRequested && ipResponses.Count() != addresses.Count())
-                                   {
-                                       //AnsiConsole.Clear();
-                                       ctx.UpdateTarget(BuildTable(ipResponses, addresses, frame, processedAddresses));
-
-                                       frame++;
-                                       if (frame >= FRAMES)
-                                       {
-                                           frame = 0;
-                                       }
-                                       await Task.Delay(refresh, cts.Token).ContinueWith(_ => { });
-                                   }
-                                   //throw new OperationCanceledException("Cancel");
-                               });
-
-                            }
-                            catch (OperationCanceledException ex)
-                            {
-                                AnsiConsole.MarkupLine("[yellow]Stopping live view...[/]");
-                                AnsiConsole.MarkupLine("[yellow]Scan stopped[/]");
-                                AnsiConsole.Markup("[grey]Press [bold]<Enter>[/] to continue...[/]");
-                                // Console.ReadLine();
-                                AnsiConsole.Clear();
-                                menu = MENU_CONNECT_TO_SERVER_TYPE;
-                            }
 
 
 
@@ -647,6 +643,7 @@ namespace Client
                             Console.ReadLine();
                             menu = MENU_CONNECT_TO_SERVER_TYPE;
                         }
+                        Thread.Sleep(2000);
                         httpRequestCounter++;
 
 
@@ -684,8 +681,9 @@ namespace Client
 
                 var query = new ObjectQuery("SELECT UserName,Model FROM Win32_ComputerSystem");
                 using var searcher = new ManagementObjectSearcher(scope, query);
+                ManagementObjectCollection collection = searcher.Get();
 
-                foreach (ManagementObject mo in searcher.Get())
+                foreach (ManagementObject mo in collection)
                 {
 
                     var aux = mo["UserName"];
