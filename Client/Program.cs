@@ -144,6 +144,10 @@ namespace Client
             int processedAddresses = 0;
             int httpRequestCounter = 0;
 
+
+
+
+
             while (true)
             {
 
@@ -425,14 +429,25 @@ namespace Client
                             // List into which put results of scanning
                             List<ipResponse> ipResponses = new List<ipResponse>();
 
+
+
                             //For stoping scanning
                             var cts = new CancellationTokenSource();
+                            //CancellationToken ct = cts.Token;
 
-                            Console.CancelKeyPress += (_, e) =>
+
+                            // Start async shortcut listener
+                            var shortcutTask = ListenForShortcutAsync(cts);
+
+
+
+                            /*
+                            Console.CancelKeyPress += (_,e) =>
                             {
-                                e.Cancel = true;
                                 cts.Cancel();
                             };
+                            */
+
 
 
                             var table = new Spectre.Console.Table();
@@ -446,6 +461,8 @@ namespace Client
                                    .AutoClear(false)
                                    .StartAsync(async ctx =>
                                    {
+                                       cts.Token.ThrowIfCancellationRequested();
+
                                        //startedDisplaying = true;
                                        var refresh = TimeSpan.FromMilliseconds(100);
                                        int frame = 0;
@@ -465,157 +482,194 @@ namespace Client
                                    });
 
                             }
-                            catch (OperationCanceledException ex)
+                            catch (OperationCanceledException)
                             {
-                                AnsiConsole.MarkupLine("[yellow]Stopping live view...[/]");
+                                menu = MENU_CONNECT_TO_SERVER_TYPE;
                                 AnsiConsole.MarkupLine("[yellow]Scan stopped[/]");
                                 AnsiConsole.Markup("[grey]Press [bold]<Enter>[/] to continue...[/]");
-                                // Console.ReadLine();
-                                AnsiConsole.Clear();
-                                menu = MENU_CONNECT_TO_SERVER_TYPE;
+                                //Console.ReadLine();
+                                continue;
                             }
 
-
+                            ParallelOptions options = new ParallelOptions { CancellationToken = cts.Token, MaxDegreeOfParallelism = 2 };
 
                             //foreach (var ip in addresses)
-                            var scanTask = Parallel.ForEachAsync(
-                                addresses,
-                                new ParallelOptions { CancellationToken = cts.Token, MaxDegreeOfParallelism = 2 },
-                                async (ip, ct) =>
-                                {
-                                    ip.isOperated = true;
+                            try
+                            {
 
-
-
-                                    Ping pingSender = new Ping();
-
-                                    int pingCounter = 0;
-                                    string data = "aa";
-                                    byte[] buffer = Encoding.ASCII.GetBytes(data);
-
-                                    ipResponse response = new ipResponse(ip.address.ToString(), DateTime.Now);
-                                    bool pingSuccess = false;
-
-                                    IPAddress pingAddress = IPAddress.Parse(ip.address.ToString());
-
-                                    while (pingCounter < MAX_PING_COUNTER)
+                                var scanTask = Parallel.ForEachAsync(
+                                    addresses, options,
+                                    async (ip, ct) =>
                                     {
 
-                                        try
+                                        //Throwin excepttion if Cancelation Requested
+                                        cts.Token.ThrowIfCancellationRequested();
+
+
+
+
+                                        ip.isOperated = true;
+
+
+
+                                        Ping pingSender = new Ping();
+
+                                        int pingCounter = 0;
+                                        string data = "aa";
+                                        byte[] buffer = Encoding.ASCII.GetBytes(data);
+
+                                        ipResponse response = new ipResponse(ip.address.ToString(), DateTime.Now);
+                                        bool pingSuccess = false;
+
+                                        IPAddress pingAddress = IPAddress.Parse(ip.address.ToString());
+
+                                        while (pingCounter < MAX_PING_COUNTER)
                                         {
-                                            PingReply reply = pingSender.Send(pingAddress, PING_TIMEOUT);
-                                            if (reply.Status == IPStatus.Success)
+
+                                            //Throwin excepttion if Cancelation Requested (should be in multiple places)
+                                            cts.Token.ThrowIfCancellationRequested();
+
+                                            try
                                             {
-                                                response.successFinding = true;
-                                                response.lastFoundDate = DateTime.Now;
-                                                IPHostEntry hostname = null;
-                                                try
+                                                PingReply reply = pingSender.Send(pingAddress, PING_TIMEOUT);
+                                                if (reply.Status == IPStatus.Success)
                                                 {
-                                                    //string hostname=Dns.GetHostEntry(pingAddress)?.ToString() ?? "";
-                                                    hostname = Dns.GetHostEntry(pingAddress);
-                                                    IPHostEntry host = Dns.GetHostEntry(ip.address.ToString());
-
-                                                    response.hostname = host.HostName;
-
-                                                }
-                                                catch (SocketException ex)
-                                                {
-                                                    response.hostname = "";
-
-                                                }
-
-
-                                                if (response.hostname != "")
-                                                {
-
-                                                    var aux = GetUserAndModel(ref menu, usingCustomCredentials, credentialsUsername, credentialsPassword.ToString(), response.hostname);
-
-                                                    response.lastLoggedUser = aux.user;
-                                                    response.model = aux.model;
-
-
-                                                    response.operatingSystem = getOSVersion(response.hostname, usingCustomCredentials, credentialsUsername, credentialsPassword);
-
-                                                    response.serialNumber = getSN(response.hostname, usingCustomCredentials, credentialsUsername, credentialsPassword);
-
-                                                    if (response.lastLoggedUser == "-" && response.model == "-" && response.operatingSystem == "-" && response.serialNumber == "-")
+                                                    response.successFinding = true;
+                                                    response.lastFoundDate = DateTime.Now;
+                                                    IPHostEntry hostname = null;
+                                                    try
                                                     {
+                                                        //string hostname=Dns.GetHostEntry(pingAddress)?.ToString() ?? "";
+                                                        hostname = Dns.GetHostEntry(pingAddress);
+                                                        IPHostEntry host = Dns.GetHostEntry(ip.address.ToString());
+
+                                                        response.hostname = host.HostName;
+
+                                                    }
+                                                    catch (SocketException ex)
+                                                    {
+                                                        response.hostname = "";
+
+                                                    }
+                                                    catch (OperationCanceledException)
+                                                    {
+                                                        menu = MENU_CONNECT_TO_SERVER_TYPE;
+                                                        AnsiConsole.MarkupLine("[yellow]Scan stopped[/]");
+                                                        AnsiConsole.Markup("[grey]Press [bold]<Enter>[/] to continue...[/]");
+                                                        //Console.ReadLine();
+                                                        continue;
+                                                    }
+
+
+                                                    if (response.hostname != "")
+                                                    {
+
+                                                        var aux = GetUserAndModel(ref menu, usingCustomCredentials, credentialsUsername, credentialsPassword.ToString(), response.hostname);
+
+                                                        response.lastLoggedUser = aux.user;
+                                                        response.model = aux.model;
+
+
+                                                        response.operatingSystem = getOSVersion(response.hostname, usingCustomCredentials, credentialsUsername, credentialsPassword);
+
+                                                        response.serialNumber = getSN(response.hostname, usingCustomCredentials, credentialsUsername, credentialsPassword);
+
+                                                        if (response.lastLoggedUser == "-" && response.model == "-" && response.operatingSystem == "-" && response.serialNumber == "-")
+                                                        {
+                                                            response.model = GetPrinterModel(ip.address.ToString());
+                                                            response.serialNumber = GetPrinterSN(ip.address.ToString());
+                                                        }
+                                                    }
+                                                    else
+                                                    {
+                                                        response.lastLoggedUser = "-";
+
                                                         response.model = GetPrinterModel(ip.address.ToString());
                                                         response.serialNumber = GetPrinterSN(ip.address.ToString());
+
+                                                        response.operatingSystem = "-";
+                                                        response.serialNumber = "-";
+
                                                     }
+
+
+                                                    pingSuccess = true;
+                                                    response.successFinding = true;
+                                                    break;
                                                 }
-                                                else
-                                                {
-                                                    response.lastLoggedUser = "-";
-
-                                                    response.model = GetPrinterModel(ip.address.ToString());
-                                                    response.serialNumber = GetPrinterSN(ip.address.ToString());
-
-                                                    response.operatingSystem = "-";
-                                                    response.serialNumber = "-";
-
-                                                }
-
-
-                                                pingSuccess = true;
-                                                response.successFinding = true;
-                                                break;
                                             }
+                                            catch (PingException ex)
+                                            {
+                                                response.operatingSystem = "-";
+
+                                                response.serialNumber = "-";
+                                            }
+                                            catch (OperationCanceledException)
+                                            {
+                                                menu = MENU_CONNECT_TO_SERVER_TYPE;
+                                                AnsiConsole.MarkupLine("[yellow]Scan stopped[/]");
+                                                AnsiConsole.Markup("[grey]Press [bold]<Enter>[/] to continue...[/]");
+                                                // Console.ReadLine();
+                                                continue;
+                                            }
+
+                                            pingCounter++;
+
+
+
+
                                         }
-                                        catch (PingException ex)
+
+                                        if (pingSuccess == false)
                                         {
-                                            response.operatingSystem = "-";
-
-                                            response.serialNumber = "-";
+                                            response.successFinding = false;
                                         }
 
-                                        pingCounter++;
+                                        ipResponses.Add(response);
+                                        ip.isOperated = false;
 
 
-
-
+                                        processedAddresses++;
                                     }
-
-                                    if (pingSuccess == false)
-                                    {
-                                        response.successFinding = false;
-                                    }
-
-                                    ipResponses.Add(response);
-                                    ip.isOperated = false;
+                                );//for parallel
 
 
-                                    processedAddresses++;
+
+
+
+
+
+                                await scanTask;
+                                // Console.WriteLine("Started Delay");
+                                //Console.WriteLine("Delayed");
+
+                                //sending response to server
+                                await sendResponseToServer(serverData.getAddress(), serverData.getPort(), client, ipResponses);
+
+                                await displayTask;
+
+                                Console.Clear();
+                                AnsiConsole.Write(BuildTable(ipResponses, addresses, 0, processedAddresses));
+                                //await Task.Delay(2000);
+                                Thread.Sleep(3000);
+
+                                if (cts.IsCancellationRequested)
+                                {
+                                    menu = MENU_CONNECT_TO_SERVER_TYPE;
+                                    AnsiConsole.MarkupLine("[yellow]Scan stopped[/]");
+                                    AnsiConsole.Markup("[grey]Press [bold]<Enter>[/] to continue...[/]");
+
+                                    break;
                                 }
-                            );//for parallel
-
-
-
-
-
-                            await scanTask;
-                            // Console.WriteLine("Started Delay");
-                            //Console.WriteLine("Delayed");
-
-                            //sending response to server
-                            await sendResponseToServer(serverData.getAddress(), serverData.getPort(), client, ipResponses);
-
-                            await displayTask;
-
-                            Console.Clear();
-                            AnsiConsole.Write(BuildTable(ipResponses, addresses, 0, processedAddresses));
-                            //await Task.Delay(2000);
-                            Thread.Sleep(3000);
-
-                            if (cts.IsCancellationRequested)
+                            }
+                            catch (OperationCanceledException)
                             {
                                 menu = MENU_CONNECT_TO_SERVER_TYPE;
                                 AnsiConsole.MarkupLine("[yellow]Scan stopped[/]");
                                 AnsiConsole.Markup("[grey]Press [bold]<Enter>[/] to continue...[/]");
-                                Console.ReadLine();
-                                break;
-                            }
 
+                                continue;
+                            }
                             //Thread.Sleep(4000);
                             //stoping displaying table
                             //cts.Cancel();
@@ -979,7 +1033,7 @@ namespace Client
             ipResponses = ipResponses ?? new List<ipResponse>();
 
             var tab = new Spectre.Console.Table();
-            tab.Title($"[bold]Live Ping[/]  (Ctrl+C to stop) - Processed {processedAddresses} addresses");
+            tab.Title($"[bold]Live Ping[/]  (Ctrl + 'Q' to stop) - Processed {processedAddresses} addresses");
             tab.AddColumn(new TableColumn(new Markup("[green] IpAddress [/]")));
             tab.AddColumn(new TableColumn("[blue] Hostname [/]"));
             tab.AddColumn(new TableColumn("[blue] Last logged user [/]"));
@@ -1132,6 +1186,37 @@ namespace Client
 
             return fileSelection;
         }
+
+
+        static Task ListenForShortcutAsync(CancellationTokenSource cts)
+        {
+            return Task.Run(() =>
+            {
+                while (true)//(!token.IsCancellationRequested)
+                {
+                    if (!Console.KeyAvailable)
+                    {
+                        Thread.Sleep(50);
+                        continue;
+                    }
+
+                    var key = Console.ReadKey(intercept: true);
+
+                    if (key.Modifiers.HasFlag(ConsoleModifiers.Control) &&
+                        key.Key == ConsoleKey.Q)
+                    {
+                        Console.Clear();
+                        Console.WriteLine($"\n[red]Ctrl+Q[/] detected...");
+                        cts.Cancel();
+                        cts.Token.ThrowIfCancellationRequested();
+                        throw new OperationCanceledException();
+
+                        //Environment.Exit(0);   // or trigger CTS instead
+                    }
+                }
+            });
+        }
+
 
 
     }
