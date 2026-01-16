@@ -144,7 +144,7 @@ namespace Client
             int processedAddresses = 0;
             int httpRequestCounter = 0;
 
-
+            Task shortcutTask = null;
 
 
 
@@ -362,6 +362,15 @@ namespace Client
                 else if (menu == MENU_PROCESS_CLIENT)
                 {
 
+                    //For stoping scanning
+                    var cts = new CancellationTokenSource();
+                    //CancellationToken ct = cts.Token;
+
+
+                    // Start async shortcut listener
+                    shortcutTask = ListenForShortcutAsync(cts);
+
+
                     if (!askedForCredentials)
                     {
                         bool isRunningOnLinux = RuntimeInformation.IsOSPlatform(OSPlatform.Linux);
@@ -382,6 +391,7 @@ namespace Client
                         if ((isRunningOnLinux && !usingCustomCredentials) || reqCustomCredentials)
                         {
                             menu = MENU_INPUT_CREDENTIALS;
+                            shortcutTask.Dispose();
                             continue;
                         }
                     }
@@ -431,29 +441,12 @@ namespace Client
 
 
 
-                            //For stoping scanning
-                            var cts = new CancellationTokenSource();
-                            //CancellationToken ct = cts.Token;
-
-
-                            // Start async shortcut listener
-                            var shortcutTask = ListenForShortcutAsync(cts);
-
-
-
-                            /*
-                            Console.CancelKeyPress += (_,e) =>
-                            {
-                                cts.Cancel();
-                            };
-                            */
-
 
 
                             var table = new Spectre.Console.Table();
 
                             Task displayTask = null;
-
+                            Task scanTask = null;
                             //Printing progress
                             try
                             {
@@ -466,8 +459,14 @@ namespace Client
                                        //startedDisplaying = true;
                                        var refresh = TimeSpan.FromMilliseconds(100);
                                        int frame = 0;
-                                       while (!cts.IsCancellationRequested && ipResponses.Count() != addresses.Count())
+
+                                       while (!cts.IsCancellationRequested)
+                                       //while (!cts.IsCancellationRequested && ipResponses.Count() != addresses.Count())
                                        {
+                                           if (scanTask != null && (scanTask.IsCompleted || scanTask.IsCanceled || scanTask.Status == TaskStatus.RanToCompletion))
+                                           {
+                                               break;
+                                           }
                                            //AnsiConsole.Clear();
                                            ctx.UpdateTarget(BuildTable(ipResponses, addresses, frame, processedAddresses));
 
@@ -487,17 +486,19 @@ namespace Client
                                 menu = MENU_CONNECT_TO_SERVER_TYPE;
                                 AnsiConsole.MarkupLine("[yellow]Scan stopped[/]");
                                 AnsiConsole.Markup("[grey]Press [bold]<Enter>[/] to continue...[/]");
+                                displayTask.Dispose();
+                                shortcutTask.Dispose();
                                 //Console.ReadLine();
                                 continue;
                             }
 
-                            ParallelOptions options = new ParallelOptions { CancellationToken = cts.Token, MaxDegreeOfParallelism = 2 };
+                            ParallelOptions options = new ParallelOptions { CancellationToken = cts.Token, MaxDegreeOfParallelism = 4 };
 
                             //foreach (var ip in addresses)
                             try
                             {
 
-                                var scanTask = Parallel.ForEachAsync(
+                                scanTask = Parallel.ForEachAsync(
                                     addresses, options,
                                     async (ip, ct) =>
                                     {
@@ -609,6 +610,8 @@ namespace Client
                                                 menu = MENU_CONNECT_TO_SERVER_TYPE;
                                                 AnsiConsole.MarkupLine("[yellow]Scan stopped[/]");
                                                 AnsiConsole.Markup("[grey]Press [bold]<Enter>[/] to continue...[/]");
+                                                displayTask.Dispose();
+                                                shortcutTask.Dispose();
                                                 // Console.ReadLine();
                                                 continue;
                                             }
@@ -640,25 +643,39 @@ namespace Client
 
 
                                 await scanTask;
+
+                                scanTask.Dispose();
+
                                 // Console.WriteLine("Started Delay");
                                 //Console.WriteLine("Delayed");
+
+                                Thread.Sleep(3000);
+
+
+                                await displayTask;
+
 
                                 //sending response to server
                                 await sendResponseToServer(serverData.getAddress(), serverData.getPort(), client, ipResponses);
 
-                                await displayTask;
+
+
+
+                                displayTask.Dispose();
+                                shortcutTask.Dispose();
 
                                 Console.Clear();
                                 AnsiConsole.Write(BuildTable(ipResponses, addresses, 0, processedAddresses));
                                 //await Task.Delay(2000);
-                                Thread.Sleep(3000);
+                                //Thread.Sleep(3000);
 
                                 if (cts.IsCancellationRequested)
                                 {
                                     menu = MENU_CONNECT_TO_SERVER_TYPE;
                                     AnsiConsole.MarkupLine("[yellow]Scan stopped[/]");
                                     AnsiConsole.Markup("[grey]Press [bold]<Enter>[/] to continue...[/]");
-
+                                    displayTask.Dispose();
+                                    shortcutTask.Dispose();
                                     break;
                                 }
                             }
@@ -667,9 +684,12 @@ namespace Client
                                 menu = MENU_CONNECT_TO_SERVER_TYPE;
                                 AnsiConsole.MarkupLine("[yellow]Scan stopped[/]");
                                 AnsiConsole.Markup("[grey]Press [bold]<Enter>[/] to continue...[/]");
-
+                                displayTask.Dispose();
+                                shortcutTask.Dispose();
                                 continue;
                             }
+
+                            shortcutTask.Dispose();
                             //Thread.Sleep(4000);
                             //stoping displaying table
                             //cts.Cancel();
@@ -704,11 +724,16 @@ namespace Client
                     }
                     catch (Exception ex)
                     {
-                        // Console.WriteLine($"[2 Error] {ex.GetType()} {ex.Message}");
-                        //Console.WriteLine($"Url: {url}");
-                        //AnsiConsole.Markup("[grey]Press [bold]<Enter>[/] to continue (errorrrrrr)...[/]");
-                        // Console.ReadLine();
-                        // menu = MENU_CONNECT_TO_SERVER_TYPE;
+                        cts.Cancel();
+                        try
+                        {
+                            shortcutTask.Dispose();
+                        }
+                        catch (System.InvalidOperationException)
+                        {
+                            //await shortcutTask;
+                        }
+
                     }
 
 
@@ -818,7 +843,7 @@ namespace Client
 
                 scope.Connect();
 
-                // Win32_OperatingSystem instead of Win32_ComputerSystem
+
                 var query = new ObjectQuery(
                     "SELECT  SerialNumber FROM Win32_BIOS");
 
@@ -1192,7 +1217,8 @@ namespace Client
         {
             return Task.Run(() =>
             {
-                while (true)//(!token.IsCancellationRequested)
+                //while (true)
+                while (!(cts.IsCancellationRequested))
                 {
                     if (!Console.KeyAvailable)
                     {
@@ -1206,7 +1232,7 @@ namespace Client
                         key.Key == ConsoleKey.Q)
                     {
                         Console.Clear();
-                        Console.WriteLine($"\n[red]Ctrl+Q[/] detected...");
+                        Console.WriteLine($"[red]Ctrl+Q[/] detected...");
                         cts.Cancel();
                         cts.Token.ThrowIfCancellationRequested();
                         throw new OperationCanceledException();

@@ -586,7 +586,7 @@ namespace MyApp
             var conn = new NpgsqlConnection(connectionString);
             while (true)
             {
-                AnsiConsole.MarkupLine("[red]CLEARING LEASE OWNERS !![/]");
+                AnsiConsole.MarkupLine($"[red]CLEARING LEASE OWNERS !![/]");
                 var sql = @"
                             UPDATE devices
                             SET lease_owner = NULL,
