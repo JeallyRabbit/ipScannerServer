@@ -144,12 +144,13 @@ namespace Client
             int processedAddresses = 0;
             int httpRequestCounter = 0;
 
-            Task shortcutTask = null;
 
 
 
             while (true)
             {
+
+
 
                 if (menu == MENU_EXIT)
                 {
@@ -157,6 +158,8 @@ namespace Client
                 }
                 if (menu == MENU_CONNECT_TO_SERVER_TYPE)
                 {
+
+
                     //getting server connection data
                     Console.Clear();
                     var clientConnectionChoice = AnsiConsole.Prompt(
@@ -361,15 +364,8 @@ namespace Client
                 }
                 else if (menu == MENU_PROCESS_CLIENT)
                 {
-
-                    //For stoping scanning
                     var cts = new CancellationTokenSource();
-                    //CancellationToken ct = cts.Token;
-
-
-                    // Start async shortcut listener
-                    shortcutTask = ListenForShortcutAsync(cts);
-
+                    Task shortcutTask = ListenForShortcutAsync(cts);
 
                     if (!askedForCredentials)
                     {
@@ -454,7 +450,6 @@ namespace Client
                                    .AutoClear(false)
                                    .StartAsync(async ctx =>
                                    {
-                                       cts.Token.ThrowIfCancellationRequested();
 
                                        //startedDisplaying = true;
                                        var refresh = TimeSpan.FromMilliseconds(100);
@@ -463,6 +458,9 @@ namespace Client
                                        while (!cts.IsCancellationRequested)
                                        //while (!cts.IsCancellationRequested && ipResponses.Count() != addresses.Count())
                                        {
+
+                                           cts.Token.ThrowIfCancellationRequested();
+
                                            if (scanTask != null && (scanTask.IsCompleted || scanTask.IsCanceled || scanTask.Status == TaskStatus.RanToCompletion))
                                            {
                                                break;
@@ -492,13 +490,14 @@ namespace Client
                                 continue;
                             }
 
-                            ParallelOptions options = new ParallelOptions { CancellationToken = cts.Token, MaxDegreeOfParallelism = 4 };
+                            ParallelOptions options = new ParallelOptions { CancellationToken = cts.Token, MaxDegreeOfParallelism = 8 };
 
                             //foreach (var ip in addresses)
                             try
                             {
 
                                 scanTask = Parallel.ForEachAsync(
+
                                     addresses, options,
                                     async (ip, ct) =>
                                     {
@@ -643,13 +642,12 @@ namespace Client
 
 
                                 await scanTask;
-
+                                shortcutTask.Dispose();
                                 scanTask.Dispose();
 
-                                // Console.WriteLine("Started Delay");
-                                //Console.WriteLine("Delayed");
+                                //AnsiConsole.Clear();
+                                //AnsiConsole.Write(BuildTable(ipResponses, addresses, 0, processedAddresses));
 
-                                Thread.Sleep(3000);
 
 
                                 await displayTask;
@@ -662,12 +660,9 @@ namespace Client
 
 
                                 displayTask.Dispose();
-                                shortcutTask.Dispose();
 
                                 Console.Clear();
                                 AnsiConsole.Write(BuildTable(ipResponses, addresses, 0, processedAddresses));
-                                //await Task.Delay(2000);
-                                //Thread.Sleep(3000);
 
                                 if (cts.IsCancellationRequested)
                                 {
@@ -690,9 +685,6 @@ namespace Client
                             }
 
                             shortcutTask.Dispose();
-                            //Thread.Sleep(4000);
-                            //stoping displaying table
-                            //cts.Cancel();
                         }
 
 
@@ -715,6 +707,8 @@ namespace Client
                             Thread.Sleep(1000);
                             AnsiConsole.Markup("[grey]Press [bold]<Enter>[/] to continue (errorrrrrr)...[/]");
                             Console.ReadLine();
+
+                            shortcutTask.Dispose();
                             menu = MENU_CONNECT_TO_SERVER_TYPE;
                         }
                         Thread.Sleep(2000);
@@ -772,39 +766,6 @@ namespace Client
                 }
 
 
-                // That requires WinRM to be turned on the remote machine
-
-                /*
-                var options = new WSManSessionOptions();
-                if (usingCustomCredentials)
-                { // for custom credentials on windows and linux always
-                    string domainName = System.Net.NetworkInformation.IPGlobalProperties.GetIPGlobalProperties().DomainName;
-
-                    var creds = new CimCredential(PasswordAuthenticationMechanism.Default, domainName, credentialsUsername, credentialsPassword);
-
-                    options = new WSManSessionOptions();
-                    options.AddDestinationCredentials(creds);
-                }
-
-                var session = CimSession.Create(hostname, options);
-
-                
-
-                var result = session.QueryInstances(
-                    @"root\cimv2",
-                    "WQL",
-                    "SELECT UserName, Model FROM Win32_ComputerSystem");
-
-
-                foreach (var item in result)
-                {
-
-                    var user = item.CimInstanceProperties["UserName"].Value;
-                    var model = item.CimInstanceProperties["Model"].Value;
-                    mySystem = new UserModel(user.ToString(), model.ToString());
-                }
-                */
-
 
 
             }
@@ -858,34 +819,6 @@ namespace Client
                 }
 
 
-                /*
-                // That requires WinRM to be turned on the remote machine
-                var options = new WSManSessionOptions();
-                if (usingCustomCredentials)
-                { // for custom credentials on windows and linux always
-                    string domainName = System.Net.NetworkInformation.IPGlobalProperties.GetIPGlobalProperties().DomainName;
-
-                    var creds = new CimCredential(PasswordAuthenticationMechanism.Default, domainName, credentialsUsername, credentialsPassword);
-
-                    options = new WSManSessionOptions();
-                    options.AddDestinationCredentials(creds);
-                }
-
-                var session = CimSession.Create(hostname, options);
-
-                var result = session.QueryInstances(
-                    @"root\cimv2",
-                    "WQL",
-                    "SELECT SerialNumber FROM Win32_BIOS");
-
-                foreach (var item in result)
-                {
-                    var SerialNumber = item.CimInstanceProperties["SerialNumber"].Value;
-
-                    return SerialNumber.ToString();
-                }
-                */
-
             }
             catch (Exception)
             {
@@ -901,34 +834,6 @@ namespace Client
             try//getting windows version of remote machine
             {
 
-                /*
-                // That requires WinRM to be turned on the remote machine
-                var options = new WSManSessionOptions();
-                if (usingCustomCredentials)
-                { // for custom credentials on windows and linux always
-                    string domainName = System.Net.NetworkInformation.IPGlobalProperties.GetIPGlobalProperties().DomainName;
-
-                    var creds = new CimCredential(PasswordAuthenticationMechanism.Default, domainName, credentialsUsername, credentialsPassword);
-
-                    options = new WSManSessionOptions();
-                    options.AddDestinationCredentials(creds);
-                }
-
-                var session = CimSession.Create(hostname, options);
-                
-                var result = session.QueryInstances(
-                    @"root\cimv2",
-                    "WQL",
-                    "SELECT Caption, SerialNumber  FROM Win32_OperatingSystem");
-
-                foreach (var item in result)
-                {
-
-                    var caption = item.CimInstanceProperties["Caption"].Value;
-
-                    return caption.ToString();
-                }
-                */
 
                 // Works only for client running windows
                 var options = usingCustomCredentials ? new ConnectionOptions
@@ -1162,6 +1067,7 @@ namespace Client
             {
                 //Console.WriteLine($"❌ Error: {httpResponse.StatusCode}");
             }
+            Task.Delay(5000);
             Console.WriteLine("Finished sending");
         }
 
@@ -1213,35 +1119,33 @@ namespace Client
         }
 
 
-        static Task ListenForShortcutAsync(CancellationTokenSource cts)
+        static async Task ListenForShortcutAsync(CancellationTokenSource _cts)
         {
-            return Task.Run(() =>
+            while (!_cts.Token.IsCancellationRequested)
             {
-                //while (true)
-                while (!(cts.IsCancellationRequested))
+                if (!Console.KeyAvailable)
                 {
-                    if (!Console.KeyAvailable)
-                    {
-                        Thread.Sleep(50);
-                        continue;
-                    }
-
-                    var key = Console.ReadKey(intercept: true);
-
-                    if (key.Modifiers.HasFlag(ConsoleModifiers.Control) &&
-                        key.Key == ConsoleKey.Q)
-                    {
-                        Console.Clear();
-                        Console.WriteLine($"[red]Ctrl+Q[/] detected...");
-                        cts.Cancel();
-                        cts.Token.ThrowIfCancellationRequested();
-                        throw new OperationCanceledException();
-
-                        //Environment.Exit(0);   // or trigger CTS instead
-                    }
+                    await Task.Delay(50, _cts.Token);
+                    continue;
                 }
-            });
+
+                var key = Console.ReadKey(intercept: true);
+
+                if (key.Modifiers.HasFlag(ConsoleModifiers.Control) &&
+                    key.Key == ConsoleKey.Q)
+                {
+                    Console.Clear();
+                    AnsiConsole.WriteLine($"[red]Ctrl+Q[/] detected...");
+
+                    _cts.Cancel();          // notify others
+                    break;
+                }
+            }
+
+            // cooperative cancellation
+            _cts.Token.ThrowIfCancellationRequested();
         }
+
 
 
 

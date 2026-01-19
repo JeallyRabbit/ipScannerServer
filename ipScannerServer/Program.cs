@@ -82,8 +82,8 @@ namespace MyApp
         const int MENU_DATABASE_JSON = 2;
         const int MENU_DATABASE_INPUT = 3;
         const int MENU_PROCESS_SERVER_SIDE = 4;
-        const int CLEAR_LEASE_OWNERS_INTERVAL = 600000;// 60 sec between clearing lease_owners in database
-        const int REQUEST_PACKAGE_SIZE = 30;
+        const int CLEAR_LEASE_OWNERS_INTERVAL = 60000;// 60 sec between clearing lease_owners in database
+        const int REQUEST_PACKAGE_SIZE = 10;
 
         const string SELECTION_BACK = "back";
 
@@ -404,6 +404,8 @@ namespace MyApp
                         var app = builder.Build();
 
 
+                        clearLeaseOwners(connectionString);
+
                         //clearing expired lease_onwers
                         //clearLeaseOwners(connectionString);
                         /*
@@ -475,6 +477,7 @@ namespace MyApp
 
                                 var rows = await conn.QueryAsync<IP>(sql, new { leaseOwner = senderHostname, myLimit = REQUEST_PACKAGE_SIZE });
 
+                                Console.WriteLine($"Sending {rows.Count()} records");
                                 /*
                                 foreach (var r in rows)
                                 {
@@ -525,7 +528,7 @@ namespace MyApp
                                     {
                                         Hostname = pc.hostname,
                                         LastLoggedUser = pc.lastLoggedUser,
-                                        LastFoundDate = pc.lastFoundDate.Date,
+                                        LastFoundDate = pc.lastFoundDate,
                                         OperatingSystem = pc.operatingSystem,
                                         Address = pc.address,
                                         LastCheckedDate = pc.lastCheckedDate,
