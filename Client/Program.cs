@@ -1,5 +1,6 @@
 ﻿using SnmpSharpNet;
 using Spectre.Console;
+using Spectre.Console.Rendering;
 using System.Management;
 using System.Net;
 using System.Net.Http.Json;
@@ -420,7 +421,6 @@ namespace Client
                         if (addresses is null)
                         {
                             AnsiConsole.MarkupLine($"No data acquired from server");
-                            //Add sleeping here ?
                         }
                         else
                         {
@@ -442,6 +442,7 @@ namespace Client
                             var table = new Spectre.Console.Table();
 
                             Task displayTask = null;
+                            Task responseTask = null;
                             Task scanTask = null;
                             //Printing progress
                             try
@@ -455,25 +456,61 @@ namespace Client
                                        var refresh = TimeSpan.FromMilliseconds(100);
                                        int frame = 0;
 
-                                       while (!cts.IsCancellationRequested)
-                                       //while (!cts.IsCancellationRequested && ipResponses.Count() != addresses.Count())
+                                       try
                                        {
 
-                                           cts.Token.ThrowIfCancellationRequested();
 
-                                           if (scanTask != null && (scanTask.IsCompleted || scanTask.IsCanceled || scanTask.Status == TaskStatus.RanToCompletion))
+                                           while (!cts.IsCancellationRequested)
+                                           //while (!cts.IsCancellationRequested && ipResponses.Count() != addresses.Count())
                                            {
-                                               break;
-                                           }
-                                           //AnsiConsole.Clear();
-                                           ctx.UpdateTarget(BuildTable(ipResponses, addresses, frame, processedAddresses));
 
-                                           frame++;
-                                           if (frame >= FRAMES)
-                                           {
-                                               frame = 0;
+                                               cts.Token.ThrowIfCancellationRequested();
+
+                                               if (responseTask != null && (responseTask.IsCompleted || responseTask.IsCanceled || responseTask.Status == TaskStatus.RanToCompletion))
+                                               {
+                                                   break;
+                                               }
+                                               //AnsiConsole.Clear();
+                                               //ctx.UpdateTarget(BuildTable(ipResponses, addresses, frame, processedAddresses));
+
+                                               List<ipResponse> responsesSnapshot;
+                                               List<IP> addressesSnapshot;
+
+                                               lock (_lock)
+                                               {
+                                                   responsesSnapshot = ipResponses.ToList();
+                                                   addressesSnapshot = addresses.ToList();
+                                               }
+
+                                               var currentTable = BuildTable(responsesSnapshot, addressesSnapshot, frame, processedAddresses);
+
+                                               // Update BOTH table and progress bar together
+                                               ctx.UpdateTarget(
+                                                   BuildView(
+                                                       currentTable,
+                                                       responsesSnapshot.Count,
+                                                       addressesSnapshot.Count
+                                                   // $"Scanning... frame={ipResponses.Count() / addresses.Count()}"
+                                                   )
+                                               );
+
+
+                                               frame++;
+                                               if (frame >= FRAMES)
+                                               {
+                                                   frame = 0;
+                                               }
+
+
+
+                                               await Task.Delay(refresh, cts.Token);//.ContinueWith(_ => { return; });
                                            }
-                                           await Task.Delay(refresh, cts.Token);//.ContinueWith(_ => { return; });
+                                       }
+                                       catch (Exception ex)
+                                       {
+                                           // This is the exception that causes "Faulted"
+                                           AnsiConsole.WriteException(ex);
+                                           throw;
                                        }
                                        //throw new OperationCanceledException("Cancel");
                                    });
@@ -627,11 +664,22 @@ namespace Client
                                             response.successFinding = false;
                                         }
 
-                                        ipResponses.Add(response);
+
+                                        //ipResponses.Add(response);
+
+                                        lock (_lock)
+                                        {
+                                            ipResponses.Add(response);
+                                        }
+
+
                                         ip.isOperated = false;
 
 
-                                        processedAddresses++;
+                                        //processedAddresses++;
+                                        Interlocked.Increment(ref processedAddresses);
+
+
                                     }
                                 );//for parallel
 
@@ -639,30 +687,44 @@ namespace Client
 
 
 
-
+                                scanTask.Wait();
 
                                 await scanTask;
-                                shortcutTask.Dispose();
-                                scanTask.Dispose();
+                                try
+                                {
+                                    shortcutTask.Dispose();
+                                }
+                                catch (InvalidOperationException ex)
+                                {
+                                    ///
+                                }
+                                try
+                                {
+                                    scanTask.Dispose();
+                                }
+                                catch (InvalidOperationException ex)
+                                {
+                                    ///
+                                }
 
                                 //AnsiConsole.Clear();
                                 //AnsiConsole.Write(BuildTable(ipResponses, addresses, 0, processedAddresses));
 
 
 
-                                await displayTask;
 
 
                                 //sending response to server
-                                await sendResponseToServer(serverData.getAddress(), serverData.getPort(), client, ipResponses);
-
-
+                                responseTask = sendResponseToServer(serverData.getAddress(), serverData.getPort(), client, ipResponses);
+                                await responseTask;
+                                await displayTask;
+                                AnsiConsole.Clear();
 
 
                                 displayTask.Dispose();
 
-                                Console.Clear();
-                                AnsiConsole.Write(BuildTable(ipResponses, addresses, 0, processedAddresses));
+                                //Console.Clear();
+                                //AnsiConsole.Write(BuildTable(ipResponses, addresses, 0, processedAddresses));
 
                                 if (cts.IsCancellationRequested)
                                 {
@@ -711,7 +773,6 @@ namespace Client
                             shortcutTask.Dispose();
                             menu = MENU_CONNECT_TO_SERVER_TYPE;
                         }
-                        Thread.Sleep(2000);
                         httpRequestCounter++;
 
 
@@ -734,6 +795,9 @@ namespace Client
                 }
             }
         }
+
+        private static readonly object _lock = new();
+
 
         private static UserModel GetUserAndModel(ref int menu, bool usingCustomCredentials, string credentialsUsername, string credentialsPassword, string hostname)
         {
@@ -957,6 +1021,54 @@ namespace Client
             return "-";
         }
 
+        static int GetRenderableWidth(IRenderable renderable)
+        {
+            var profile = AnsiConsole.Console.Profile;
+
+            // Use current console width if available, otherwise fall back
+            var maxWidth = profile.Width > 0 ? profile.Width : 80;
+
+            // RenderOptions needs capabilities + console size
+            var options = new RenderOptions(
+                profile.Capabilities,
+                new Size(maxWidth, profile.Height > 0 ? profile.Height : 25)
+            );
+
+            // Measurement.Max is the preferred/maximum width for the renderable
+            var measurement = renderable.Measure(options, maxWidth);
+            return measurement.Max;
+        }
+
+
+        static IRenderable BuildView(
+            Table table,
+            int processed,
+            int total
+            //string status
+            )
+        {
+
+            int tableWidth = GetRenderableWidth(table);
+
+
+            var pct = total <= 0 ? 0 : (double)processed / total * 100.0;
+
+            var bar = new BarChart()
+                .Width(tableWidth)
+                .WithMaxValue(100)
+                .AddItem("Progress", pct, color: null)   // color is optional (null)
+                .ShowValues()
+                .UseValueFormatter(v => $"{v:0}% ({processed}/{total})");
+
+            return new Rows(
+                table,
+                bar
+            //new Rule(),
+            //new Markup($"[grey]{status}[/]")
+            );
+        }
+
+
         static Spectre.Console.Table BuildTable(List<ipResponse> ipResponses = null, List<IP> addresses = null, int counter = 0, int processedAddresses = 0)
         {
             addresses = addresses ?? new List<IP>();
@@ -1053,7 +1165,8 @@ namespace Client
         private static async Task sendResponseToServer(string serverIp, string serverPort, HttpClient client, List<ipResponse> ipResponses)
         {
             //Console.Clear();
-            Console.WriteLine("Sending response to server");
+            //Console.WriteLine();
+            //Console.WriteLine("Sending response to server");
             string url = $"http://{serverIp}:{serverPort}/api/pcs/response";
             HttpResponseMessage httpResponse = await client.PutAsJsonAsync(url, ipResponses);
 
@@ -1067,8 +1180,8 @@ namespace Client
             {
                 //Console.WriteLine($"❌ Error: {httpResponse.StatusCode}");
             }
-            Task.Delay(5000);
-            Console.WriteLine("Finished sending");
+            await Task.Delay(2000);
+            //Console.WriteLine("Finished sending");
         }
 
         private static string fileSelection(string currentDir, int height)

@@ -83,7 +83,7 @@ namespace MyApp
         const int MENU_DATABASE_INPUT = 3;
         const int MENU_PROCESS_SERVER_SIDE = 4;
         const int CLEAR_LEASE_OWNERS_INTERVAL = 60000;// 60 sec between clearing lease_owners in database
-        const int REQUEST_PACKAGE_SIZE = 10;
+        const int REQUEST_PACKAGE_SIZE = 30;
 
         const string SELECTION_BACK = "back";
 
