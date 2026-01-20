@@ -388,7 +388,14 @@ namespace Client
                         if ((isRunningOnLinux && !usingCustomCredentials) || reqCustomCredentials)
                         {
                             menu = MENU_INPUT_CREDENTIALS;
-                            shortcutTask.Dispose();
+                            try
+                            {
+                                shortcutTask.Dispose();
+                            }
+                            catch (System.InvalidOperationException)
+                            {
+                                //await shortcutTask;
+                            }
                             continue;
                         }
                     }
@@ -521,8 +528,23 @@ namespace Client
                                 menu = MENU_CONNECT_TO_SERVER_TYPE;
                                 AnsiConsole.MarkupLine("[yellow]Scan stopped[/]");
                                 AnsiConsole.Markup("[grey]Press [bold]<Enter>[/] to continue...[/]");
-                                displayTask.Dispose();
-                                shortcutTask.Dispose();
+                                try
+                                {
+                                    displayTask.Dispose();
+                                }
+                                catch (System.InvalidOperationException)
+                                {
+                                    //await shortcutTask;
+                                }
+
+                                try
+                                {
+                                    shortcutTask.Dispose();
+                                }
+                                catch (System.InvalidOperationException)
+                                {
+                                    //await shortcutTask;
+                                }
                                 //Console.ReadLine();
                                 continue;
                             }
@@ -646,8 +668,22 @@ namespace Client
                                                 menu = MENU_CONNECT_TO_SERVER_TYPE;
                                                 AnsiConsole.MarkupLine("[yellow]Scan stopped[/]");
                                                 AnsiConsole.Markup("[grey]Press [bold]<Enter>[/] to continue...[/]");
-                                                displayTask.Dispose();
-                                                shortcutTask.Dispose();
+                                                try
+                                                {
+                                                    shortcutTask.Dispose();
+                                                }
+                                                catch (System.InvalidOperationException)
+                                                {
+                                                    //await shortcutTask;
+                                                }
+                                                try
+                                                {
+                                                    displayTask.Dispose();
+                                                }
+                                                catch (System.InvalidOperationException)
+                                                {
+                                                    //await shortcutTask;
+                                                }
                                                 // Console.ReadLine();
                                                 continue;
                                             }
@@ -721,7 +757,22 @@ namespace Client
                                 AnsiConsole.Clear();
 
 
-                                displayTask.Dispose();
+                                try
+                                {
+                                    displayTask.Dispose();
+                                }
+                                catch (System.InvalidOperationException)
+                                {
+                                    //await shortcutTask;
+                                }
+                                try
+                                {
+                                    shortcutTask.Dispose();
+                                }
+                                catch (System.InvalidOperationException)
+                                {
+                                    //await shortcutTask;
+                                }
 
                                 //Console.Clear();
                                 //AnsiConsole.Write(BuildTable(ipResponses, addresses, 0, processedAddresses));
@@ -731,8 +782,22 @@ namespace Client
                                     menu = MENU_CONNECT_TO_SERVER_TYPE;
                                     AnsiConsole.MarkupLine("[yellow]Scan stopped[/]");
                                     AnsiConsole.Markup("[grey]Press [bold]<Enter>[/] to continue...[/]");
-                                    displayTask.Dispose();
-                                    shortcutTask.Dispose();
+                                    try
+                                    {
+                                        displayTask.Dispose();
+                                    }
+                                    catch (System.InvalidOperationException)
+                                    {
+                                        //await shortcutTask;
+                                    }
+                                    try
+                                    {
+                                        shortcutTask.Dispose();
+                                    }
+                                    catch (System.InvalidOperationException)
+                                    {
+                                        //await shortcutTask;
+                                    }
                                     break;
                                 }
                             }
@@ -741,12 +806,41 @@ namespace Client
                                 menu = MENU_CONNECT_TO_SERVER_TYPE;
                                 AnsiConsole.MarkupLine("[yellow]Scan stopped[/]");
                                 AnsiConsole.Markup("[grey]Press [bold]<Enter>[/] to continue...[/]");
-                                displayTask.Dispose();
-                                shortcutTask.Dispose();
+                                try
+                                {
+                                    displayTask.Dispose();
+                                }
+                                catch (System.InvalidOperationException)
+                                {
+                                    //await shortcutTask;
+                                }
+                                try
+                                {
+                                    shortcutTask.Dispose();
+                                }
+                                catch (System.InvalidOperationException)
+                                {
+                                    //await shortcutTask;
+                                }
                                 continue;
                             }
 
-                            shortcutTask.Dispose();
+                            try
+                            {
+                                displayTask.Dispose();
+                            }
+                            catch (System.InvalidOperationException)
+                            {
+                                //await shortcutTask;
+                            }
+                            try
+                            {
+                                shortcutTask.Dispose();
+                            }
+                            catch (System.InvalidOperationException)
+                            {
+                                //await shortcutTask;
+                            }
                         }
 
 
@@ -770,7 +864,14 @@ namespace Client
                             AnsiConsole.Markup("[grey]Press [bold]<Enter>[/] to continue (errorrrrrr)...[/]");
                             Console.ReadLine();
 
-                            shortcutTask.Dispose();
+                            try
+                            {
+                                shortcutTask.Dispose();
+                            }
+                            catch (System.InvalidOperationException)
+                            {
+                                //await shortcutTask;
+                            }
                             menu = MENU_CONNECT_TO_SERVER_TYPE;
                         }
                         httpRequestCounter++;
