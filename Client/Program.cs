@@ -513,6 +513,13 @@ namespace Client
                                                await Task.Delay(refresh, cts.Token);//.ContinueWith(_ => { return; });
                                            }
                                        }
+                                       catch (OperationCanceledException)
+                                       {
+                                           AnsiConsole.Clear();
+                                           menu = MENU_CONNECT_TO_SERVER_TYPE;
+                                           AnsiConsole.MarkupLine("[yellow]Scan stopped[/]");
+                                           AnsiConsole.Markup("[grey]Press [bold]<Enter>[/] to continue...[/]");
+                                       }
                                        catch (Exception ex)
                                        {
                                            // This is the exception that causes "Faulted"
@@ -525,6 +532,7 @@ namespace Client
                             }
                             catch (OperationCanceledException)
                             {
+                                AnsiConsole.Clear();
                                 menu = MENU_CONNECT_TO_SERVER_TYPE;
                                 AnsiConsole.MarkupLine("[yellow]Scan stopped[/]");
                                 AnsiConsole.Markup("[grey]Press [bold]<Enter>[/] to continue...[/]");
@@ -543,9 +551,8 @@ namespace Client
                                 }
                                 catch (System.InvalidOperationException)
                                 {
-                                    //await shortcutTask;
+
                                 }
-                                //Console.ReadLine();
                                 continue;
                             }
 
@@ -612,6 +619,7 @@ namespace Client
                                                     }
                                                     catch (OperationCanceledException)
                                                     {
+                                                        AnsiConsole.Clear();
                                                         menu = MENU_CONNECT_TO_SERVER_TYPE;
                                                         AnsiConsole.MarkupLine("[yellow]Scan stopped[/]");
                                                         AnsiConsole.Markup("[grey]Press [bold]<Enter>[/] to continue...[/]");
@@ -665,6 +673,7 @@ namespace Client
                                             }
                                             catch (OperationCanceledException)
                                             {
+                                                AnsiConsole.Clear();
                                                 menu = MENU_CONNECT_TO_SERVER_TYPE;
                                                 AnsiConsole.MarkupLine("[yellow]Scan stopped[/]");
                                                 AnsiConsole.Markup("[grey]Press [bold]<Enter>[/] to continue...[/]");
@@ -726,6 +735,7 @@ namespace Client
                                 scanTask.Wait();
 
                                 await scanTask;
+                                /*
                                 try
                                 {
                                     shortcutTask.Dispose();
@@ -742,6 +752,7 @@ namespace Client
                                 {
                                     ///
                                 }
+                                */
 
                                 //AnsiConsole.Clear();
                                 //AnsiConsole.Write(BuildTable(ipResponses, addresses, 0, processedAddresses));
@@ -757,6 +768,7 @@ namespace Client
                                 AnsiConsole.Clear();
 
 
+                                /*
                                 try
                                 {
                                     displayTask.Dispose();
@@ -773,12 +785,14 @@ namespace Client
                                 {
                                     //await shortcutTask;
                                 }
+                                */
 
                                 //Console.Clear();
                                 //AnsiConsole.Write(BuildTable(ipResponses, addresses, 0, processedAddresses));
 
                                 if (cts.IsCancellationRequested)
                                 {
+                                    AnsiConsole.Clear();
                                     menu = MENU_CONNECT_TO_SERVER_TYPE;
                                     AnsiConsole.MarkupLine("[yellow]Scan stopped[/]");
                                     AnsiConsole.Markup("[grey]Press [bold]<Enter>[/] to continue...[/]");
@@ -803,25 +817,11 @@ namespace Client
                             }
                             catch (OperationCanceledException)
                             {
+                                AnsiConsole.Clear();
                                 menu = MENU_CONNECT_TO_SERVER_TYPE;
                                 AnsiConsole.MarkupLine("[yellow]Scan stopped[/]");
                                 AnsiConsole.Markup("[grey]Press [bold]<Enter>[/] to continue...[/]");
-                                try
-                                {
-                                    displayTask.Dispose();
-                                }
-                                catch (System.InvalidOperationException)
-                                {
-                                    //await shortcutTask;
-                                }
-                                try
-                                {
-                                    shortcutTask.Dispose();
-                                }
-                                catch (System.InvalidOperationException)
-                                {
-                                    //await shortcutTask;
-                                }
+
                                 continue;
                             }
 
@@ -859,28 +859,20 @@ namespace Client
                         if (httpRequestCounter > MAX_HTTP_REQUEST_RETRY)
                         {
                             httpRequestCounter = 0;
-                            Console.WriteLine($"[red][Error][/] {ex.GetType()} {ex.Message}");
+                            AnsiConsole.MarkupLine($"[red][Error][/] {ex.GetType()} {ex.Message}");
                             Thread.Sleep(1000);
                             AnsiConsole.Markup("[grey]Press [bold]<Enter>[/] to continue (errorrrrrr)...[/]");
                             Console.ReadLine();
 
-                            try
-                            {
-                                shortcutTask.Dispose();
-                            }
-                            catch (System.InvalidOperationException)
-                            {
-                                //await shortcutTask;
-                            }
+                            //await shortcutTask;
+
                             menu = MENU_CONNECT_TO_SERVER_TYPE;
                         }
                         httpRequestCounter++;
 
-
                     }
-                    catch (Exception ex)
+                    catch (System.AggregateException)
                     {
-                        cts.Cancel();
                         try
                         {
                             shortcutTask.Dispose();
@@ -889,6 +881,17 @@ namespace Client
                         {
                             //await shortcutTask;
                         }
+                        menu = MENU_CONNECT_TO_SERVER_TYPE;
+                    }
+                    catch (Exception ex)
+                    {
+                        cts.Cancel();
+
+                    }
+                    finally
+                    {
+                        try { shortcutTask.Dispose(); }
+                        catch { }
 
                     }
 
@@ -1349,7 +1352,7 @@ namespace Client
                     key.Key == ConsoleKey.Q)
                 {
                     Console.Clear();
-                    AnsiConsole.WriteLine($"[red]Ctrl+Q[/] detected...");
+                    AnsiConsole.MarkupLine($"[red]Ctrl+Q[/] detected...");
 
                     _cts.Cancel();          // notify others
                     break;
