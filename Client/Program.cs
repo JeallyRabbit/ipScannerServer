@@ -37,6 +37,7 @@ namespace Client
         public string operatingSystem { get; set; }
         public string model { get; set; }
         public string serialNumber { get; set; }
+        public int procGen { get; set; }
 
         public DateTime lastCheckedDate { get; set; }
         public DateTime lastFoundDate { get; set; }
@@ -51,6 +52,7 @@ namespace Client
             this.hostname = "";
             this.operatingSystem = "";
             this.lastFoundDate = new DateTime();
+            this.procGen = 0;
         }
     }
     public class IP
@@ -123,6 +125,21 @@ namespace Client
 
         const int FRAMES = 4;
 
+        private static readonly object _scanCtsLock = new();
+        private static CancellationTokenSource? _currentScanCts;
+
+
+        static void SetCurrentScanCts(CancellationTokenSource? cts)
+        {
+            lock (_scanCtsLock)
+                _currentScanCts = cts;
+        }
+
+        static void CancelCurrentScan()
+        {
+            lock (_scanCtsLock)
+                _currentScanCts?.Cancel();
+        }
 
         public static string url = "";
         static async Task Main(string[] args)
@@ -146,6 +163,8 @@ namespace Client
             int httpRequestCounter = 0;
 
 
+            using var appCts = new CancellationTokenSource();
+            var shortcutTask = ListenForShortcutAsync(appCts);
 
 
             while (true)
@@ -365,8 +384,9 @@ namespace Client
                 }
                 else if (menu == MENU_PROCESS_CLIENT)
                 {
-                    var cts = new CancellationTokenSource();
-                    Task shortcutTask = ListenForShortcutAsync(cts);
+
+                    using var cts = new CancellationTokenSource();
+                    SetCurrentScanCts(cts);
 
                     if (!askedForCredentials)
                     {
@@ -390,7 +410,7 @@ namespace Client
                             menu = MENU_INPUT_CREDENTIALS;
                             try
                             {
-                                shortcutTask.Dispose();
+                                //   //shortcutTask.Dispose();
                             }
                             catch (System.InvalidOperationException)
                             {
@@ -538,7 +558,7 @@ namespace Client
                                 AnsiConsole.Markup("[grey]Press [bold]<Enter>[/] to continue...[/]");
                                 try
                                 {
-                                    displayTask.Dispose();
+                                    //displayTask.Dispose();
                                 }
                                 catch (System.InvalidOperationException)
                                 {
@@ -547,7 +567,7 @@ namespace Client
 
                                 try
                                 {
-                                    shortcutTask.Dispose();
+                                    //shortcutTask.Dispose();
                                 }
                                 catch (System.InvalidOperationException)
                                 {
@@ -556,7 +576,10 @@ namespace Client
                                 continue;
                             }
 
-                            ParallelOptions options = new ParallelOptions { CancellationToken = cts.Token, MaxDegreeOfParallelism = 8 };
+                            ParallelOptions options = new ParallelOptions
+                            {
+                                CancellationToken = cts.Token//, MaxDegreeOfParallelism = 1
+                            };
 
                             //foreach (var ip in addresses)
                             try
@@ -641,10 +664,13 @@ namespace Client
 
                                                         response.serialNumber = getSN(response.hostname, usingCustomCredentials, credentialsUsername, credentialsPassword);
 
+                                                        response.procGen = getProcGen(ip.address.ToString());
+
                                                         if (response.lastLoggedUser == "-" && response.model == "-" && response.operatingSystem == "-" && response.serialNumber == "-")
                                                         {
                                                             response.model = GetPrinterModel(ip.address.ToString());
                                                             response.serialNumber = GetPrinterSN(ip.address.ToString());
+
                                                         }
                                                     }
                                                     else
@@ -679,7 +705,7 @@ namespace Client
                                                 AnsiConsole.Markup("[grey]Press [bold]<Enter>[/] to continue...[/]");
                                                 try
                                                 {
-                                                    shortcutTask.Dispose();
+                                                    //shortcutTask.Dispose();
                                                 }
                                                 catch (System.InvalidOperationException)
                                                 {
@@ -687,7 +713,7 @@ namespace Client
                                                 }
                                                 try
                                                 {
-                                                    displayTask.Dispose();
+                                                    //displayTask.Dispose();
                                                 }
                                                 catch (System.InvalidOperationException)
                                                 {
@@ -738,7 +764,7 @@ namespace Client
                                 /*
                                 try
                                 {
-                                    shortcutTask.Dispose();
+                                    //shortcutTask.Dispose();
                                 }
                                 catch (InvalidOperationException ex)
                                 {
@@ -771,7 +797,7 @@ namespace Client
                                 /*
                                 try
                                 {
-                                    displayTask.Dispose();
+                                    //displayTask.Dispose();
                                 }
                                 catch (System.InvalidOperationException)
                                 {
@@ -779,7 +805,7 @@ namespace Client
                                 }
                                 try
                                 {
-                                    shortcutTask.Dispose();
+                                    //shortcutTask.Dispose();
                                 }
                                 catch (System.InvalidOperationException)
                                 {
@@ -798,7 +824,7 @@ namespace Client
                                     AnsiConsole.Markup("[grey]Press [bold]<Enter>[/] to continue...[/]");
                                     try
                                     {
-                                        displayTask.Dispose();
+                                        //displayTask.Dispose();
                                     }
                                     catch (System.InvalidOperationException)
                                     {
@@ -806,7 +832,7 @@ namespace Client
                                     }
                                     try
                                     {
-                                        shortcutTask.Dispose();
+                                        //shortcutTask.Dispose();
                                     }
                                     catch (System.InvalidOperationException)
                                     {
@@ -827,7 +853,7 @@ namespace Client
 
                             try
                             {
-                                displayTask.Dispose();
+                                //displayTask.Dispose();
                             }
                             catch (System.InvalidOperationException)
                             {
@@ -835,7 +861,7 @@ namespace Client
                             }
                             try
                             {
-                                shortcutTask.Dispose();
+                                //shortcutTask.Dispose();
                             }
                             catch (System.InvalidOperationException)
                             {
@@ -859,12 +885,11 @@ namespace Client
                         if (httpRequestCounter > MAX_HTTP_REQUEST_RETRY)
                         {
                             httpRequestCounter = 0;
-                            AnsiConsole.MarkupLine($"[red][Error][/] {ex.GetType()} {ex.Message}");
+                            AnsiConsole.MarkupLine($"[red]Error[/] {ex.GetType()} {ex.Message}");
                             Thread.Sleep(1000);
-                            AnsiConsole.Markup("[grey]Press [bold]<Enter>[/] to continue (errorrrrrr)...[/]");
+                            AnsiConsole.Markup("[grey]Press [bold]<Enter>[/][/]");
                             Console.ReadLine();
 
-                            //await shortcutTask;
 
                             menu = MENU_CONNECT_TO_SERVER_TYPE;
                         }
@@ -875,7 +900,7 @@ namespace Client
                     {
                         try
                         {
-                            shortcutTask.Dispose();
+                            //shortcutTask.Dispose();
                         }
                         catch (System.InvalidOperationException)
                         {
@@ -890,9 +915,8 @@ namespace Client
                     }
                     finally
                     {
-                        try { shortcutTask.Dispose(); }
-                        catch { }
 
+                        SetCurrentScanCts(null);
                     }
 
 
@@ -954,6 +978,65 @@ namespace Client
             return mySystem;
         }
 
+        private static int getProcGen(string hostname = "", bool usingCustomCredentials = false, string credentialsUsername = "", SecureString credentialsPassword = null)
+        {
+
+            string foundProcGen = "", foundProcName = "";
+            try//getting windows version of remote machine
+            {
+
+                // Works only for client running windows
+                var options = usingCustomCredentials ? new ConnectionOptions
+                {
+                    Username = credentialsUsername,
+                    Password = credentialsPassword.ToString(),
+                    Timeout = new TimeSpan(0, 0, 5)
+                } : new ConnectionOptions();
+
+                var scope = new ManagementScope($@"\\{hostname}\root\cimv2", options);
+
+
+                scope.Connect();
+
+
+
+
+                var query = new ObjectQuery("SELECT Name FROM Win32_Processor");
+                using var searcher = new ManagementObjectSearcher(scope, query);
+                ManagementObjectCollection collection = searcher.Get();
+
+
+                foreach (ManagementObject m in collection)
+                {
+                    foundProcName = m["Name"].ToString();
+                    for (int i = 0; i < foundProcName.Length; i++)
+                    {
+                        if (foundProcName[i] == '-' && i < foundProcName.Length - 1)
+                        {
+                            foundProcGen = foundProcName[i + 1].ToString();
+                            if (foundProcName[i + 1] == '1' && i < foundProcName.Length - 2) { foundProcGen += foundProcName[i + 2].ToString(); }
+                            break;
+                        }
+                    }
+                }
+
+
+            }
+            catch (Exception)
+            {
+                return 0;
+            }
+            try
+            {
+                return Int32.Parse(foundProcGen);
+            }
+            catch
+            {
+                return 0;
+            }
+
+        }
+
         private static string getSN(string hostname = "", bool usingCustomCredentials = false, string credentialsUsername = "", SecureString credentialsPassword = null)
         {
             try//getting windows version of remote machine
@@ -977,6 +1060,7 @@ namespace Client
                     "SELECT  SerialNumber FROM Win32_BIOS");
 
                 using var searcher = new ManagementObjectSearcher(scope, query);
+                searcher.Options.Timeout = new TimeSpan(0, 0, 10);//10 sec
                 using var results = searcher.Get();
 
                 foreach (ManagementObject os in results)
@@ -1185,6 +1269,7 @@ namespace Client
             tab.AddColumn(new TableColumn("[blue] Last logged user [/]"));
             tab.AddColumn(new TableColumn("[blue] Last checked date [/]"));
             tab.AddColumn(new TableColumn("[blue] Operating system [/]"));
+            tab.AddColumn(new TableColumn("[blue] Proc. Gen. [/]"));
             tab.AddColumn(new TableColumn("[blue] Last found Date [/]"));
             tab.AddColumn(new TableColumn("[blue] Model [/]"));
             tab.AddColumn(new TableColumn("[blue] SerialNumber [/]"));
@@ -1199,7 +1284,7 @@ namespace Client
                     if (!re.successFinding)
                     {
 
-                        tab.AddRow($"[red]{re.address.ToString()}[/]", "[red] - not found -[/]", "[red] - not found -[/]", re.lastCheckedDate.ToString(), "-", "-", "-", "-");
+                        tab.AddRow($"[red]{re.address.ToString()}[/]", "[red] - not found -[/]", "[red] - not found -[/]", re.lastCheckedDate.ToString(), "-", re.procGen.ToString(), "-", "-", "-");
 
                     }
                     else
@@ -1215,8 +1300,9 @@ namespace Client
                             //string tabLastFoundDate = re.lastFoundDate?.ToString() ?? "-";
                             string tabModel = re.model?.ToString() ?? "-";
                             string tabSN = re.serialNumber?.ToString() ?? "-";
+                            string tabProcGen = re.procGen.ToString();
                             tab.AddRow($"[green]{tabAddress}[/]", tabHostname, tabLastLoggedUser, $"[green]{re.lastCheckedDate.ToString()}[/]",
-                            $"[green]{tabOperatingSystem}[/]", $"[green]{re.lastFoundDate.ToString()}[/]", $"[green]{tabModel}[/]", $"[green]{tabSN}[/]");
+                            $"[green]{tabOperatingSystem}[/]", $"[green]{tabProcGen}[/]", $"[green]{re.lastFoundDate.ToString()}[/]", $"[green]{tabModel}[/]", $"[green]{tabSN}[/]");
 
 
                         }
@@ -1271,6 +1357,7 @@ namespace Client
             //Console.Clear();
             //Console.WriteLine();
             //Console.WriteLine("Sending response to server");
+
             string url = $"http://{serverIp}:{serverPort}/api/pcs/response";
             HttpResponseMessage httpResponse = await client.PutAsJsonAsync(url, ipResponses);
 
@@ -1354,13 +1441,12 @@ namespace Client
                     Console.Clear();
                     AnsiConsole.MarkupLine($"[red]Ctrl+Q[/] detected...");
 
-                    _cts.Cancel();          // notify others
-                    break;
+                    CancelCurrentScan();
                 }
             }
 
             // cooperative cancellation
-            _cts.Token.ThrowIfCancellationRequested();
+            //_cts.Token.ThrowIfCancellationRequested();
         }
 
 

@@ -47,6 +47,7 @@ namespace MyApp
         public string operatingSystem { get; set; }
         public string model { get; set; }
         public string serialNumber { get; set; }
+        public int procGen { get; set; }
         public DateTime lastCheckedDate { get; set; }
         public DateTime lastFoundDate { get; set; }
 
@@ -82,7 +83,7 @@ namespace MyApp
         const int MENU_DATABASE_JSON = 2;
         const int MENU_DATABASE_INPUT = 3;
         const int MENU_PROCESS_SERVER_SIDE = 4;
-        const int CLEAR_LEASE_OWNERS_INTERVAL = 60000;// 60 sec between clearing lease_owners in database
+        const int CLEAR_LEASE_OWNERS_INTERVAL = 600000;// 600 sec between clearing lease_owners in database
         const int REQUEST_PACKAGE_SIZE = 30;
 
         const string SELECTION_BACK = "back";
@@ -406,40 +407,7 @@ namespace MyApp
 
                         clearLeaseOwners(connectionString);
 
-                        //clearing expired lease_onwers
-                        //clearLeaseOwners(connectionString);
-                        /*
-                        var t = Task.Run(async () =>
-                        {
-                            var conn = new NpgsqlConnection(connectionString);
-                            while (true)
-                            {
-                                AnsiConsole.MarkupLine("[red]CLEARING LEASE OWNERS !![/]");
-                                var sql = @"
-                            UPDATE devices
-                            SET lease_owner = NULL,
-                            lease_end_date = NULL
-                            WHERE lease_end_date < CURRENT_TIMESTAMP
-                            ";
-                                try
-                                {
 
-                                    var rows = await conn.QueryAsync(sql);
-
-                                    AnsiConsole.MarkupLine($"[grey]Removed {rows.Count()} lease owners.[/]");
-                                    //return Results.Ok(rows);
-                                }
-                                catch (System.ArgumentNullException ex)
-                                {
-                                    Console.WriteLine(ex);
-                                    //return Results.NotFound();
-                                }
-
-
-                                await Task.Delay(CLEAR_LEASE_OWNERS_INTERVAL);
-                            }
-                        });
-                        */
 
 
 
@@ -521,7 +489,8 @@ namespace MyApp
                                 operating_system = @OperatingSystem,
                                 last_found_date = @LastFoundDate,
                                 model=@Model,
-                                serial_number=@SN
+                                serial_number=@SN,
+                                proc_gen=@ProcGen
                                 WHERE ip= @Address
                                 ";
                                     var rows = await conn.QueryAsync<IP>(sqlResponse, new
@@ -533,7 +502,8 @@ namespace MyApp
                                         Address = pc.address,
                                         LastCheckedDate = pc.lastCheckedDate,
                                         Model = pc.model,
-                                        SN = pc.serialNumber
+                                        SN = pc.serialNumber,
+                                        ProcGen = pc.procGen
                                     });
 
                                 }
@@ -545,7 +515,7 @@ namespace MyApp
                                 last_checked_date = @LastCheckedDate
                                 WHERE ip= @Address
                                 ";
-                                    var rows = await conn.QueryAsync<IP>(sqlResponse, new { LastCheckedDate = pc.lastCheckedDate, Address = pc.address });
+                                    var rows = await conn.QueryAsync<IP>(sqlResponse, new { LastCheckedDate = pc.lastCheckedDate, Address = pc.address, ProcGen = pc.procGen });
 
                                 }
 
