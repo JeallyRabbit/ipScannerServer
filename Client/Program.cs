@@ -664,7 +664,7 @@ namespace Client
 
                                                         response.serialNumber = getSN(response.hostname, usingCustomCredentials, credentialsUsername, credentialsPassword);
 
-                                                        response.procGen = getProcGen(ip.address.ToString());
+                                                        response.procGen = getProcGen(response.hostname);
 
                                                         if (response.lastLoggedUser == "-" && response.model == "-" && response.operatingSystem == "-" && response.serialNumber == "-")
                                                         {
