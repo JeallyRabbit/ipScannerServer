@@ -121,7 +121,7 @@ namespace Client
 
         const int PING_TIMEOUT = 1000;
 
-        const int MAX_HTTP_REQUEST_RETRY = 10;
+        const int MAX_HTTP_REQUEST_RETRY = 20;
 
         const int FRAMES = 4;
 
@@ -881,6 +881,7 @@ namespace Client
                     catch (HttpRequestException ex)
                     {
                         AnsiConsole.Clear();
+                        Thread.Sleep(2000);
 
                         if (httpRequestCounter > MAX_HTTP_REQUEST_RETRY)
                         {
